@@ -42,7 +42,8 @@ import {
 } from "@/lib/api";
 import { TRADING_UI_CONFIG } from "@/config/trading-config";
 
-const USDT_TESTNET_ADDRESS = "0x337610d27c682E347C9cD60BD4b3b107C9d34dDd" as Address;
+const USDT_TESTNET_ADDRESS =
+  "0x337610d27c682E347C9cD60BD4b3b107C9d34dDd" as Address;
 
 const ERC20_TRANSFER_ABI = [
   {
@@ -61,7 +62,9 @@ interface LivePancakeSwapCardProps {
   userAddress: string;
 }
 
-export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCardProps) {
+export default function LivePancakeSwapCard({
+  userAddress,
+}: LivePancakeSwapCardProps) {
   const { isConnected, address } = useAccount();
   const publicClient = usePublicClient();
   const { sendTransactionAsync } = useSendTransaction();
@@ -73,7 +76,9 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
   const [isSwapping, setIsSwapping] = useState(false);
   const [isAutoExecuting, setIsAutoExecuting] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [amountUsdt, setAmountUsdt] = useState<number>(TRADING_UI_CONFIG.SWAP.DEFAULT_INPUT_USDT);
+  const [amountUsdt, setAmountUsdt] = useState<number>(
+    TRADING_UI_CONFIG.SWAP.DEFAULT_INPUT_USDT,
+  );
   const [recentTrades, setRecentTrades] = useState<LiveTradeResult[]>([]);
   const [message, setMessage] = useState<{
     type: "success" | "error" | "info";
@@ -95,9 +100,15 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
   const [depositCurrency, setDepositCurrency] = useState<"BNB" | "USDT">("BNB");
-  const [depositAmount, setDepositAmount] = useState<number>(TRADING_UI_CONFIG.DEPOSIT.DEFAULT_BNB);
-  const [withdrawCurrency, setWithdrawCurrency] = useState<"BNB" | "USDT">("USDT");
-  const [withdrawAmount, setWithdrawAmount] = useState<number>(TRADING_UI_CONFIG.WITHDRAW.DEFAULT_USDT);
+  const [depositAmount, setDepositAmount] = useState<number>(
+    TRADING_UI_CONFIG.DEPOSIT.DEFAULT_BNB,
+  );
+  const [withdrawCurrency, setWithdrawCurrency] = useState<"BNB" | "USDT">(
+    "USDT",
+  );
+  const [withdrawAmount, setWithdrawAmount] = useState<number>(
+    TRADING_UI_CONFIG.WITHDRAW.DEFAULT_USDT,
+  );
   const [isSigningWallet, setIsSigningWallet] = useState(false);
 
   const fetchBalancesAndSummary = async () => {
@@ -105,7 +116,9 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
     try {
       const [liveBal, userSummary] = await Promise.all([
         getLiveBalances(),
-        userAddress ? getTransactionSummary(userAddress).catch(() => null) : Promise.resolve(null),
+        userAddress
+          ? getTransactionSummary(userAddress).catch(() => null)
+          : Promise.resolve(null),
       ]);
       setBalances(liveBal);
       if (userSummary) {
@@ -135,16 +148,25 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
   // ─── REAL ON-CHAIN DEPOSIT (SIGNS WITH WALLET) ──────────────
   const handleConfirmDeposit = async () => {
     if (!userAddress) {
-      setMessage({ type: "error", text: "Silakan hubungkan dompet Web3 Anda terlebih dahulu." });
+      setMessage({
+        type: "error",
+        text: "Silakan hubungkan dompet Web3 Anda terlebih dahulu.",
+      });
       return;
     }
     if (!depositAmount || depositAmount <= 0) return;
     if (!balances?.wallet_address) {
-      setMessage({ type: "error", text: "Alamat agent wallet belum tersedia di backend." });
+      setMessage({
+        type: "error",
+        text: "Alamat agent wallet belum tersedia di backend.",
+      });
       return;
     }
     if (!publicClient) {
-      setMessage({ type: "error", text: "Koneksi ke blockchain BSC belum siap." });
+      setMessage({
+        type: "error",
+        text: "Koneksi ke blockchain BSC belum siap.",
+      });
       return;
     }
 
@@ -164,7 +186,10 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
           address: USDT_TESTNET_ADDRESS,
           abi: ERC20_TRANSFER_ABI,
           functionName: "transfer",
-          args: [balances.wallet_address as Address, parseUnits(depositAmount.toString(), 18)],
+          args: [
+            balances.wallet_address as Address,
+            parseUnits(depositAmount.toString(), 18),
+          ],
         });
       }
 
@@ -174,7 +199,9 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
         txHash: onChainTxHash,
       });
 
-      await publicClient.waitForTransactionReceipt({ hash: onChainTxHash as Address });
+      await publicClient.waitForTransactionReceipt({
+        hash: onChainTxHash as Address,
+      });
 
       await createTransaction({
         user_address: userAddress,
@@ -195,7 +222,8 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
       setIsDepositModalOpen(false);
       fetchBalancesAndSummary();
     } catch (err: any) {
-      const errMsg = err?.shortMessage || err?.message || "Deposit dibatalkan atau gagal";
+      const errMsg =
+        err?.shortMessage || err?.message || "Deposit dibatalkan atau gagal";
       setMessage({ type: "error", text: errMsg });
     } finally {
       setIsSigningWallet(false);
@@ -205,7 +233,10 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
   // ─── REAL ON-CHAIN WITHDRAWAL ──────────────────────────────────
   const handleConfirmWithdraw = async () => {
     if (!userAddress) {
-      setMessage({ type: "error", text: "Silakan hubungkan dompet Web3 Anda terlebih dahulu." });
+      setMessage({
+        type: "error",
+        text: "Silakan hubungkan dompet Web3 Anda terlebih dahulu.",
+      });
       return;
     }
     if (!withdrawAmount || withdrawAmount <= 0) return;
@@ -239,7 +270,10 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
   // ─── REAL SWAP EXECUTION ON PANCAKESWAP ─────────────────────────
   const handleManualSwap = async (action: "BUY" | "SELL") => {
     if (!userAddress) {
-      setMessage({ type: "error", text: "Silakan hubungkan dompet Web3 Anda terlebih dahulu." });
+      setMessage({
+        type: "error",
+        text: "Silakan hubungkan dompet Web3 Anda terlebih dahulu.",
+      });
       return;
     }
     setIsSwapping(true);
@@ -270,7 +304,10 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
 
   const handleAutoTradeClick = () => {
     if (!userAddress) {
-      setMessage({ type: "error", text: "Silakan hubungkan dompet Web3 Anda terlebih dahulu." });
+      setMessage({
+        type: "error",
+        text: "Silakan hubungkan dompet Web3 Anda terlebih dahulu.",
+      });
       return;
     }
     setIsAutoConfirmOpen(true);
@@ -306,7 +343,8 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
         fetchBalancesAndSummary();
       }
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : "Auto execution failed";
+      const errMsg =
+        err instanceof Error ? err.message : "Auto execution failed";
       setMessage({ type: "error", text: errMsg });
     } finally {
       setIsAutoExecuting(false);
@@ -338,7 +376,8 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              Agent mengeksekusi order riil di PancakeSwap menggunakan modal yang Anda depositkan via tanda tangan wallet.
+              Agent mengeksekusi order riil di PancakeSwap menggunakan modal
+              yang Anda depositkan via tanda tangan wallet.
             </p>
           </div>
         </div>
@@ -348,7 +387,9 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
           disabled={isLoading}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-300 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 transition-colors"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
+          <RefreshCw
+            className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`}
+          />
           Refresh
         </button>
       </div>
@@ -365,14 +406,18 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-extrabold text-amber-400">
                   {balances?.bnb_balance.toFixed(4) ?? "0.0000"}{" "}
-                  <span className="text-xs text-slate-400 font-normal">tBNB</span>
+                  <span className="text-xs text-slate-400 font-normal">
+                    tBNB
+                  </span>
                 </span>
               </div>
               <div className="hidden sm:block w-px h-8 bg-white/10"></div>
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-extrabold text-emerald-400">
                   ${balances?.usdt_balance.toFixed(4) ?? "0.0000"}{" "}
-                  <span className="text-xs text-slate-400 font-normal">tUSDT</span>
+                  <span className="text-xs text-slate-400 font-normal">
+                    tUSDT
+                  </span>
                 </span>
               </div>
             </div>
@@ -411,7 +456,11 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
                 className="text-slate-400 hover:text-white flex items-center gap-1"
                 title="Copy Address"
               >
-                {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                {copied ? (
+                  <Check className="w-3 h-3 text-emerald-400" />
+                ) : (
+                  <Copy className="w-3 h-3" />
+                )}
               </button>
             )}
           </div>
@@ -423,11 +472,14 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
                 rel="noreferrer"
                 className="hover:underline flex items-center gap-1"
               >
-                {balances.wallet_address.slice(0, 8)}...{balances.wallet_address.slice(-6)}
+                {balances.wallet_address.slice(0, 8)}...
+                {balances.wallet_address.slice(-6)}
                 <ExternalLink className="w-3 h-3 inline" />
               </a>
             ) : (
-              <span className="text-rose-400">Belum di-set di backend/.env</span>
+              <span className="text-rose-400">
+                Belum di-set di backend/.env
+              </span>
             )}
           </div>
         </div>
@@ -450,7 +502,9 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
           </div>
           <div className="text-base font-bold text-emerald-400">
             ${balances?.usdt_balance.toFixed(4) ?? "0.0000"}{" "}
-            <span className="text-xs text-slate-400 font-normal">tUSDT On-Chain</span>
+            <span className="text-xs text-slate-400 font-normal">
+              tUSDT On-Chain
+            </span>
           </div>
         </div>
       </div>
@@ -458,9 +512,13 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
       {/* Action Controls */}
       <div className="flex flex-col sm:flex-row items-end gap-3 mb-4">
         <div className="w-full sm:w-44">
-          <label className="text-[11px] font-semibold text-slate-400 block mb-1.5">Nominal Trade (tUSDT)</label>
+          <label className="text-[11px] font-semibold text-slate-400 block mb-1.5">
+            Nominal Trade (tUSDT)
+          </label>
           <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono">$</span>
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono">
+              $
+            </span>
             <input
               type="number"
               min={TRADING_UI_CONFIG.SWAP.MIN_USDT}
@@ -509,8 +567,8 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
             message.type === "success"
               ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
               : message.type === "error"
-              ? "bg-rose-500/10 border-rose-500/30 text-rose-300"
-              : "bg-blue-500/10 border-blue-500/30 text-blue-300"
+                ? "bg-rose-500/10 border-rose-500/30 text-rose-300"
+                : "bg-blue-500/10 border-blue-500/30 text-blue-300"
           }`}
         >
           <div className="flex items-center gap-2">
@@ -536,15 +594,21 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
 
       {/* AI Analysis Result Card */}
       {aiAnalysisResult && (
-        <div className={`mb-5 p-5 rounded-2xl border ${aiAnalysisResult.executed ? "bg-emerald-500/10 border-emerald-500/30" : "bg-[#0b0e14] border-white/10"} relative overflow-hidden animate-fade-in shadow-lg`}>
+        <div
+          className={`mb-5 p-5 rounded-2xl border ${aiAnalysisResult.executed ? "bg-emerald-500/10 border-emerald-500/30" : "bg-[#0b0e14] border-white/10"} relative overflow-hidden animate-fade-in shadow-lg`}
+        >
           <div className="flex items-center gap-2 mb-4">
-            <Bot className={`w-5 h-5 ${aiAnalysisResult.executed ? "text-emerald-400" : "text-amber-400"}`} />
-            <h4 className={`text-sm font-bold ${aiAnalysisResult.executed ? "text-emerald-400" : "text-white"}`}>
+            <Bot
+              className={`w-5 h-5 ${aiAnalysisResult.executed ? "text-emerald-400" : "text-amber-400"}`}
+            />
+            <h4
+              className={`text-sm font-bold ${aiAnalysisResult.executed ? "text-emerald-400" : "text-white"}`}
+            >
               Laporan Analisis AI Agent
             </h4>
             {!aiAnalysisResult.executed && (
               <span className="ml-auto text-[10px] font-mono bg-amber-500/10 text-amber-400 px-2.5 py-1 rounded-full border border-amber-500/30 font-semibold">
-                DITUNDA (Confidence &lt; 65%)
+                DITUNDA (Confidence &lt; 35%)
               </span>
             )}
             {aiAnalysisResult.executed && (
@@ -553,23 +617,37 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
               </span>
             )}
           </div>
-          
+
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
             <div className="bg-[#12161f]/80 p-3 rounded-xl border border-white/5 shadow-inner">
-              <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Keputusan</div>
-              <div className={`font-black text-lg ${aiAnalysisResult.action === 'BUY' ? 'text-emerald-400' : aiAnalysisResult.action === 'SELL' ? 'text-rose-400' : 'text-slate-300'}`}>{aiAnalysisResult.action}</div>
+              <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">
+                Keputusan
+              </div>
+              <div
+                className={`font-black text-lg ${aiAnalysisResult.action === "BUY" ? "text-emerald-400" : aiAnalysisResult.action === "SELL" ? "text-rose-400" : "text-slate-300"}`}
+              >
+                {aiAnalysisResult.action}
+              </div>
             </div>
             <div className="bg-[#12161f]/80 p-3 rounded-xl border border-white/5 shadow-inner">
-              <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Keyakinan</div>
-              <div className="font-bold text-lg text-white">{aiAnalysisResult.confidence.toFixed(1)}%</div>
+              <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">
+                Keyakinan
+              </div>
+              <div className="font-bold text-lg text-white">
+                {aiAnalysisResult.confidence.toFixed(1)}%
+              </div>
             </div>
             <div className="bg-[#12161f]/80 p-3 rounded-xl border border-white/5 shadow-inner">
-              <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Target Market</div>
+              <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">
+                Target Market
+              </div>
               <div className="font-bold text-lg text-white">tBNB/tUSDT</div>
             </div>
             <div className="bg-[#12161f]/80 p-3 rounded-xl border border-white/5 shadow-inner">
-              <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Batas Eksekusi</div>
-              <div className="font-bold text-lg text-slate-400">Min. 65%</div>
+              <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">
+                Batas Eksekusi
+              </div>
+              <div className="font-bold text-lg text-slate-400">Min. 35%</div>
             </div>
           </div>
 
@@ -610,8 +688,8 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
                     {trade.tokenIn && trade.tokenOut
                       ? `${trade.amountIn.toFixed(4)} ${trade.tokenIn} ↔ ${trade.amountOut.toFixed(4)} ${trade.tokenOut}`
                       : trade.action === "BUY"
-                      ? `${trade.amountIn.toFixed(4)} tUSDT ↔ ${trade.amountOut.toFixed(4)} tBNB`
-                      : `${trade.amountIn.toFixed(4)} tBNB ↔ ${trade.amountOut.toFixed(4)} tUSDT`}
+                        ? `${trade.amountIn.toFixed(4)} tUSDT ↔ ${trade.amountOut.toFixed(4)} tBNB`
+                        : `${trade.amountIn.toFixed(4)} tBNB ↔ ${trade.amountOut.toFixed(4)} tUSDT`}
                   </span>
                 </div>
                 <a
@@ -642,11 +720,14 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
 
             <div className="flex items-center gap-2.5 text-emerald-400">
               <ArrowDownLeft className="w-6 h-6" />
-              <h3 className="text-base font-bold text-white">Deposit Modal On-Chain</h3>
+              <h3 className="text-base font-bold text-white">
+                Deposit Modal On-Chain
+              </h3>
             </div>
 
             <p className="text-xs text-slate-400 leading-relaxed">
-              Kirim modal dari dompet Anda ke Agent. Transaksi memerlukan konfirmasi tanda tangan wallet.
+              Kirim modal dari dompet Anda ke Agent. Transaksi memerlukan
+              konfirmasi tanda tangan wallet.
             </p>
 
             {/* Currency Choice */}
@@ -736,17 +817,22 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
 
             <div className="flex items-center gap-2.5 text-amber-400">
               <ArrowUpRight className="w-6 h-6" />
-              <h3 className="text-base font-bold text-white">Tarik Modal On-Chain</h3>
+              <h3 className="text-base font-bold text-white">
+                Tarik Modal On-Chain
+              </h3>
             </div>
 
             <p className="text-xs text-slate-400 leading-relaxed">
-              Agent akan mengirimkan token pilihan Anda langsung dari brankas on-chain ke alamat dompet Anda:{" "}
+              Agent akan mengirimkan token pilihan Anda langsung dari brankas
+              on-chain ke alamat dompet Anda:{" "}
               {userAddress ? (
                 <code className="text-amber-300 font-mono text-[10px]">
                   {userAddress.slice(0, 8)}...{userAddress.slice(-6)}
                 </code>
               ) : (
-                <span className="text-rose-400 text-[10px]">Hubungkan dompet terlebih dahulu</span>
+                <span className="text-rose-400 text-[10px]">
+                  Hubungkan dompet terlebih dahulu
+                </span>
               )}
             </p>
 
@@ -834,23 +920,45 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
 
             <div className="flex items-center gap-2.5 text-amber-400">
               <Bot className="w-6 h-6" />
-              <h3 className="text-base font-bold text-white">Konfirmasi AI Auto Swap</h3>
+              <h3 className="text-base font-bold text-white">
+                Konfirmasi AI Auto Swap
+              </h3>
             </div>
 
             <p className="text-xs text-slate-400 leading-relaxed">
-              AI Agent akan menganalisis kondisi market secara real-time menggunakan <span className="text-amber-300 font-semibold">Monte Carlo Simulation</span>, <span className="text-amber-300 font-semibold">Fear & Greed Index</span>, dan <span className="text-amber-300 font-semibold">Momentum 24 Jam</span>, lalu mengeksekusi swap secara otonom di PancakeSwap jika keyakinannya cukup tinggi.
+              AI Agent akan menganalisis kondisi market secara real-time
+              menggunakan{" "}
+              <span className="text-amber-300 font-semibold">
+                Monte Carlo Simulation
+              </span>
+              ,{" "}
+              <span className="text-amber-300 font-semibold">
+                Fear & Greed Index
+              </span>
+              , dan{" "}
+              <span className="text-amber-300 font-semibold">
+                Momentum 24 Jam
+              </span>
+              , lalu mengeksekusi swap secara otonom di PancakeSwap jika
+              keyakinannya cukup tinggi.
             </p>
 
             {/* Balance Info */}
             <div className="bg-[#0b0e14] rounded-xl p-3.5 border border-white/5 space-y-2">
-              <div className="text-[10px] text-slate-400 uppercase tracking-wider font-mono font-bold">Saldo Tersedia di Agent</div>
+              <div className="text-[10px] text-slate-400 uppercase tracking-wider font-mono font-bold">
+                Saldo Tersedia di Agent
+              </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-slate-300">tBNB (Native)</span>
-                <span className="text-sm font-bold text-amber-400">{balances?.bnb_balance.toFixed(4) ?? "0.0000"} tBNB</span>
+                <span className="text-sm font-bold text-amber-400">
+                  {balances?.bnb_balance.toFixed(4) ?? "0.0000"} tBNB
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-slate-300">tUSDT (Token)</span>
-                <span className="text-sm font-bold text-emerald-400">${balances?.usdt_balance.toFixed(4) ?? "0.0000"} tUSDT</span>
+                <span className="text-sm font-bold text-emerald-400">
+                  ${balances?.usdt_balance.toFixed(4) ?? "0.0000"} tUSDT
+                </span>
               </div>
             </div>
 
@@ -859,7 +967,13 @@ export default function LivePancakeSwapCard({ userAddress }: LivePancakeSwapCard
               <div className="flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
                 <div className="text-xs text-amber-300 leading-relaxed">
-                  <span className="font-bold">Gas Fee Reserve:</span> Sistem otomatis menyisakan <span className="font-mono font-bold">{TRADING_UI_CONFIG.AI_GUARDRAIL.GAS_RESERVE_BNB} tBNB</span> untuk biaya gas (ongkos transaksi blockchain). Sisanya akan dipakai untuk trading.
+                  <span className="font-bold">Gas Fee Reserve:</span> Sistem
+                  otomatis menyisakan{" "}
+                  <span className="font-mono font-bold">
+                    {TRADING_UI_CONFIG.AI_GUARDRAIL.GAS_RESERVE_BNB} tBNB
+                  </span>{" "}
+                  untuk biaya gas (ongkos transaksi blockchain). Sisanya akan
+                  dipakai untuk trading.
                 </div>
               </div>
             </div>
