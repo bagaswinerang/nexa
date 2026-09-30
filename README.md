@@ -2,7 +2,7 @@
 
 > A Web3 AI trading agent for BNB/USDT with on-chain agent identity, verifiable trades, and a RAG chatbot. Live on BSC Testnet.
 
-[Demo Video]([https://youtube.com/your-video-link](https://youtu.be/F037XlsFcqI)) · [Live App]([https://your-app-link](https://frontend-weld-psi-75sbyfvmt9.vercel.app/)) · [Agent Identity Contract on BscScan](https://testnet.bscscan.com/address/0xD28C0817e9FD45cA99E1Ff154925c87a335e2F5a)
+[Demo Video](https://youtu.be/F037XlsFcqI) · [Live App](https://frontend-weld-psi-75sbyfvmt9.vercel.app/) · [Agent Identity Contract on BscScan](https://testnet.bscscan.com/address/0xD28C0817e9FD45cA99E1Ff154925c87a335e2F5a)
 
 **Agent Identity Contract (BSC Testnet):** `0xD28C0817e9FD45cA99E1Ff154925c87a335e2F5a`
 
