@@ -75,8 +75,8 @@ export const QUANT_DECISION_FACTORS = {
   WEIGHTS: {
     monte_carlo_prob: 0.35,
     sentiment: 0.25,
-    momentum_24h: 0.20,
-    portfolio_risk: 0.20,
+    momentum_24h: 0.2,
+    portfolio_risk: 0.2,
   },
 
   /**
@@ -94,7 +94,7 @@ export const QUANT_DECISION_FACTORS = {
      * Tingkat keyakinan minimum (Confidence %) agar Auto-Execution dijalankan.
      * Jika confidence < nilai ini, eksekusi otomatis ditunda (HOLD demi keamanan).
      */
-    DEFAULT_MIN_CONFIDENCE_AUTO_SWAP: 65,
+    DEFAULT_MIN_CONFIDENCE_AUTO_SWAP: 35,
 
     /**
      * Jumlah hari proyeksi default untuk Monte Carlo.
