@@ -44,7 +44,7 @@ export const TRADING_UI_CONFIG = {
     GAS_RESERVE_BNB: "0.001",
 
     /** Ambang batas keyakinan minimum untuk eksekusi otomatis */
-    MIN_CONFIDENCE_PCT: 65,
+    MIN_CONFIDENCE_PCT: 35,
 
     /** Default forecast days untuk Monte Carlo */
     FORECAST_DAYS: 14,
