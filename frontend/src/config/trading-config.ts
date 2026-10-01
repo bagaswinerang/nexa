@@ -13,8 +13,6 @@ export const TRADING_UI_CONFIG = {
    * Batas input Swap tUSDT
    */
   SWAP: {
-    MIN_USDT: 0.001,
-    STEP_USDT: 0.001,
     DEFAULT_INPUT_USDT: 0.01,
   },
 
@@ -43,9 +41,10 @@ export const TRADING_UI_CONFIG = {
     /** Nilai cadangan gas fee yang disisihkan di backend */
     GAS_RESERVE_BNB: "0.001",
 
-    /** Ambang batas keyakinan minimum untuk eksekusi otomatis */
-    MIN_CONFIDENCE_PCT: 35,
 
+    /** Ambang confidence minimum untuk tampilan eksekusi otomatis */
+
+    MIN_CONFIDENCE_PCT: 35,
     /** Default forecast days untuk Monte Carlo */
     FORECAST_DAYS: 14,
   },

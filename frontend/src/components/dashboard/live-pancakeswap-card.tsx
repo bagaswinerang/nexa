@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Zap,
   ExternalLink,
@@ -33,10 +33,14 @@ import {
   getLiveBalances,
   executeLiveSwap,
   executeLiveAutoTrade,
+  getLiveAutoTradeStatus,
+  stopLiveAutoTrade,
   executeLiveWithdrawal,
   getTransactionSummary,
   createTransaction,
   type LiveBalancesResponse,
+  type LiveAutonomousStatus,
+  type LiveAutonomousDecision,
   type LiveTradeResult,
   type TransactionSummary,
 } from "@/lib/api";
@@ -75,11 +79,14 @@ export default function LivePancakeSwapCard({
   const [isLoading, setIsLoading] = useState(false);
   const [isSwapping, setIsSwapping] = useState(false);
   const [isAutoExecuting, setIsAutoExecuting] = useState(false);
+  const [isAutoRunning, setIsAutoRunning] = useState(false);
   const [copied, setCopied] = useState(false);
   const [amountUsdt, setAmountUsdt] = useState<number>(
     TRADING_UI_CONFIG.SWAP.DEFAULT_INPUT_USDT,
   );
   const [recentTrades, setRecentTrades] = useState<LiveTradeResult[]>([]);
+  const lastAutoTradeHashRef = useRef<string | null>(null);
+  const [autoDecisionLogs, setAutoDecisionLogs] = useState<LiveAutonomousDecision[]>([]);
   const [message, setMessage] = useState<{
     type: "success" | "error" | "info";
     text: string;
@@ -133,8 +140,63 @@ export default function LivePancakeSwapCard({
     }
   };
 
+  const applyAutoStatus = (status: LiveAutonomousStatus) => {
+    setIsAutoRunning(status.active);
+    if (status.recent_decisions?.length) setAutoDecisionLogs(status.recent_decisions);
+    if (status.last_recommendation) {
+      const decision = status.recent_decisions?.[0];
+      setAiAnalysisResult({
+        action: status.last_recommendation.action,
+        confidence: status.last_recommendation.confidence,
+        reasoning: status.last_recommendation.reasoning,
+        executed: decision?.executed ?? false,
+      });
+    }
+    const latestTrade = status.last_trade;
+    const latestDecision = status.recent_decisions?.[0];
+    if (latestTrade) {
+      setRecentTrades((previous) => [latestTrade, ...previous.filter((trade) => trade.txHash !== latestTrade.txHash)].slice(0, 20));
+    }
+    if (
+      latestDecision?.executed &&
+      latestTrade?.success &&
+      latestTrade.txHash !== lastAutoTradeHashRef.current
+    ) {
+      lastAutoTradeHashRef.current = latestTrade.txHash;
+      setMessage({
+        type: "success",
+        text: "AI Recommend berhasil dieksekusi di PancakeSwap. Tx Hash terverifikasi di BscScan.",
+        txHash: latestTrade.txHash,
+      });
+      void fetchBalancesAndSummary();
+    }
+  };
   useEffect(() => {
     fetchBalancesAndSummary();
+  }, [userAddress]);
+
+  useEffect(() => {
+    if (!userAddress) {
+      setIsAutoRunning(false);
+      return;
+    }
+
+    let disposed = false;
+    const refreshAutoStatus = async () => {
+      try {
+        const { status } = await getLiveAutoTradeStatus(userAddress);
+        if (!disposed) applyAutoStatus(status);
+      } catch (error) {
+        console.error("Failed to load autonomous trading status:", error);
+      }
+    };
+
+    void refreshAutoStatus();
+    const interval = window.setInterval(() => void refreshAutoStatus(), 10_000);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+    };
   }, [userAddress]);
 
   const handleCopyWallet = () => {
@@ -319,32 +381,33 @@ export default function LivePancakeSwapCard({
     setMessage(null);
     setAiAnalysisResult(null);
     try {
-      const res = await executeLiveAutoTrade({
+      const { status } = await executeLiveAutoTrade({
         user_address: userAddress,
         symbol: "BNBUSDT",
         forecast_days: TRADING_UI_CONFIG.AI_GUARDRAIL.FORECAST_DAYS,
-        min_confidence: TRADING_UI_CONFIG.AI_GUARDRAIL.MIN_CONFIDENCE_PCT,
       });
-
-      setAiAnalysisResult({
-        action: res.action,
-        confidence: res.recommendation.confidence,
-        reasoning: res.recommendation.reasoning,
-        executed: res.executed,
+      applyAutoStatus(status);
+      setMessage({
+        type: "success",
+        text: "AI Agent aktif dan akan terus menganalisis serta mengeksekusi sinyal sampai Anda menekan Stop.",
       });
-
-      if (res.executed && res.trade) {
-        setRecentTrades((prev) => [res.trade!, ...prev]);
-        setMessage({
-          type: "success",
-          text: `Autonomous Swap Sukses! AI mengeksekusi trade di PancakeSwap.`,
-          txHash: res.trade.txHash,
-        });
-        fetchBalancesAndSummary();
-      }
     } catch (err) {
-      const errMsg =
-        err instanceof Error ? err.message : "Auto execution failed";
+      const errMsg = err instanceof Error ? err.message : "Auto execution failed";
+      setMessage({ type: "error", text: errMsg });
+    } finally {
+      setIsAutoExecuting(false);
+    }
+  };
+
+  const handleStopAutoTrade = async () => {
+    if (!userAddress) return;
+    setIsAutoExecuting(true);
+    try {
+      await stopLiveAutoTrade(userAddress);
+      setIsAutoRunning(false);
+      setMessage({ type: "info", text: "AI Agent dihentikan. Tidak ada siklus trading baru yang akan dijalankan." });
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : "Unable to stop AI Agent";
       setMessage({ type: "error", text: errMsg });
     } finally {
       setIsAutoExecuting(false);
@@ -355,6 +418,8 @@ export default function LivePancakeSwapCard({
   const userTotalDeposit = summary?.total_deposit ?? 0;
   const userTotalWithdraw = summary?.total_withdrawal ?? 0;
 
+  const agentExplorerBase = balances?.network.includes("Testnet") ? "https://testnet.bscscan.com" : "https://bscscan.com";
+  const agentWalletExplorerUrl = balances?.wallet_address ? `${agentExplorerBase}/address/${balances.wallet_address}` : "";
   return (
     <div className="bg-[#12161f]/90 border border-amber-500/30 rounded-2xl p-6 shadow-xl relative overflow-hidden">
       {/* Background glow badge */}
@@ -467,7 +532,7 @@ export default function LivePancakeSwapCard({
           <div className="font-mono text-xs text-amber-400 truncate">
             {balances?.wallet_address ? (
               <a
-                href={`${balances.explorer_url}/address/${balances.wallet_address}`}
+                href={agentWalletExplorerUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="hover:underline flex items-center gap-1"
@@ -521,8 +586,8 @@ export default function LivePancakeSwapCard({
             </span>
             <input
               type="number"
-              min={TRADING_UI_CONFIG.SWAP.MIN_USDT}
-              step={TRADING_UI_CONFIG.SWAP.STEP_USDT}
+              min="0"
+              step="any"
               value={amountUsdt}
               onChange={(e) => setAmountUsdt(Number(e.target.value))}
               className="w-full bg-[#0b0e14] border border-white/10 rounded-xl pl-7 pr-3 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500/50 font-mono"
@@ -550,12 +615,12 @@ export default function LivePancakeSwapCard({
           </button>
 
           <button
-            onClick={handleAutoTradeClick}
+            onClick={isAutoRunning ? handleStopAutoTrade : handleAutoTradeClick}
             disabled={isAutoExecuting || !balances?.configured}
             className="flex-1 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-all shadow-lg shadow-amber-500/20 flex items-center justify-center gap-1.5"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
-            {isAutoExecuting ? "AI Analyzing..." : "AI Auto Swap"}
+            {isAutoExecuting ? "Menyiapkan AI..." : isAutoRunning ? "Stop AI Agent" : "Mulai AI Agent"}
           </button>
         </div>
       </div>
@@ -608,7 +673,7 @@ export default function LivePancakeSwapCard({
             </h4>
             {!aiAnalysisResult.executed && (
               <span className="ml-auto text-[10px] font-mono bg-amber-500/10 text-amber-400 px-2.5 py-1 rounded-full border border-amber-500/30 font-semibold">
-                DITUNDA (Confidence &lt; 35%)
+                {aiAnalysisResult.action === "HOLD" ? "HOLD — MENUNGGU SINYAL" : "TIDAK DIEKSEKUSI"}
               </span>
             )}
             {aiAnalysisResult.executed && (
@@ -647,7 +712,9 @@ export default function LivePancakeSwapCard({
               <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">
                 Batas Eksekusi
               </div>
-              <div className="font-bold text-lg text-slate-400">Min. 35%</div>
+              <div className="font-bold text-lg text-slate-400">
+                Min. {TRADING_UI_CONFIG.AI_GUARDRAIL.MIN_CONFIDENCE_PCT}%
+              </div>
             </div>
           </div>
 
@@ -662,6 +729,23 @@ export default function LivePancakeSwapCard({
         </div>
       )}
 
+      {autoDecisionLogs.length > 0 && (
+        <div className="mb-5 p-4 rounded-xl bg-[#0b0e14] border border-white/10">
+          <h4 className="text-xs font-semibold text-slate-300 mb-3">Log Keputusan AI Agent</h4>
+          <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+            {autoDecisionLogs.map((decision) => (
+              <div key={`${decision.timestamp}-${decision.action}`} className="flex items-start justify-between gap-3 text-xs border-b border-white/5 pb-2 last:border-0 last:pb-0">
+                <div>
+                  <span className={`font-bold ${decision.action === "BUY" ? "text-emerald-400" : decision.action === "SELL" ? "text-rose-400" : "text-amber-400"}`}>{decision.action}</span>
+                  <span className="text-slate-500"> · {decision.confidence.toFixed(1)}% · {decision.executed ? "on-chain executed" : "no swap"}</span>
+                  <p className="text-slate-400 mt-1 line-clamp-2">{decision.reasoning}</p>
+                </div>
+                <span className="text-slate-500 whitespace-nowrap">{new Date(decision.timestamp).toLocaleTimeString()}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {/* Recent On-Chain Trades */}
       {recentTrades.length > 0 && (
         <div className="mt-4 pt-4 border-t border-white/5">
@@ -939,8 +1023,7 @@ export default function LivePancakeSwapCard({
               <span className="text-amber-300 font-semibold">
                 Momentum 24 Jam
               </span>
-              , lalu mengeksekusi swap secara otonom di PancakeSwap jika
-              keyakinannya cukup tinggi.
+              , lalu terus mengevaluasi dan mengeksekusi swap secara otonom di PancakeSwap sampai Anda menekan Stop.
             </p>
 
             {/* Balance Info */}
@@ -990,7 +1073,7 @@ export default function LivePancakeSwapCard({
                 className="flex-1 py-2.5 text-xs font-bold text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 rounded-xl transition-all shadow-md shadow-amber-500/20 flex items-center justify-center gap-1.5"
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
-                Jalankan AI Agent
+                Mulai AI Agent Berkelanjutan
               </button>
             </div>
           </div>

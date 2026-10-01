@@ -208,12 +208,18 @@ export interface TradeRecommendation {
     fear_greed_label: string | null;
     price_change_24h_pct: number;
   };
-  portfolio_context: {
-    usdt_balance: number;
-    has_position: boolean;
-    position_size?: number;
-    unrealized_pnl?: number;
-    win_rate: number;
+  signal: {
+    composite: number;
+    components: {
+      monte_carlo: number;
+      sentiment: number;
+      momentum_24h: number;
+    };
+    weights: {
+      monte_carlo_prob: number;
+      sentiment: number;
+      momentum_24h: number;
+    };
   };
   timestamp: string;
 }
@@ -372,28 +378,51 @@ export async function executeLiveSwap(params: {
   });
 }
 
+export interface LiveAutonomousDecision {
+  timestamp: string;
+  action: "BUY" | "SELL" | "HOLD";
+  confidence: number;
+  reasoning: string;
+  executed: boolean;
+  trade?: LiveTradeResult;
+}
+
+export interface LiveAutonomousStatus {
+  active: boolean;
+  user_address: string;
+  symbol: string;
+  interval_ms: number;
+  started_at?: string;
+  last_cycle_at?: string;
+  last_action?: "BUY" | "SELL" | "HOLD";
+  last_error?: string;
+  last_recommendation?: Pick<TradeRecommendation, "action" | "confidence" | "reasoning">;
+  last_trade?: LiveTradeResult;
+  recent_decisions: LiveAutonomousDecision[];
+}
+
 export async function executeLiveAutoTrade(params: {
   user_address: string;
   symbol?: string;
   forecast_days?: number;
-  min_confidence?: number;
-}): Promise<{
-  executed: boolean;
-  action: "BUY" | "SELL" | "HOLD";
-  trade?: LiveTradeResult;
-  recommendation: TradeRecommendation;
-  reason?: string;
-}> {
-  return fetchAPI<{
-    executed: boolean;
-    action: "BUY" | "SELL" | "HOLD";
-    trade?: LiveTradeResult;
-    recommendation: TradeRecommendation;
-    reason?: string;
-  }>("/live-trading/auto", {
+}): Promise<{ status: LiveAutonomousStatus }> {
+  return fetchAPI<{ status: LiveAutonomousStatus }>("/live-trading/auto", {
     method: "POST",
     body: JSON.stringify(params),
   });
+}
+
+export async function stopLiveAutoTrade(userAddress: string): Promise<{ status: LiveAutonomousStatus }> {
+  return fetchAPI<{ status: LiveAutonomousStatus }>("/live-trading/auto/stop", {
+    method: "POST",
+    body: JSON.stringify({ user_address: userAddress }),
+  });
+}
+
+export async function getLiveAutoTradeStatus(userAddress: string): Promise<{ status: LiveAutonomousStatus }> {
+  return fetchAPI<{ status: LiveAutonomousStatus }>(
+    `/live-trading/auto/status?user_address=${encodeURIComponent(userAddress)}`,
+  );
 }
 
 export async function executeLiveWithdrawal(params: {
@@ -420,5 +449,3 @@ export async function executeLiveWithdrawal(params: {
     body: JSON.stringify(params),
   });
 }
-
-

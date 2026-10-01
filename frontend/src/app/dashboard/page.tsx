@@ -18,8 +18,10 @@ import {
 import {
   getTransactions,
   getTransactionSummary,
+  getTradingRecommendation,
   type Transaction,
   type TransactionSummary,
+  type TradeRecommendation,
 } from "@/lib/api";
 
 export default function DashboardPage() {
@@ -36,6 +38,9 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<TransactionSummary | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoadingUser, setIsLoadingUser] = useState(false);
+  const [quantRecommendation, setQuantRecommendation] =
+    useState<TradeRecommendation | null>(null);
+  const [isLoadingQuant, setIsLoadingQuant] = useState(false);
 
   // Fetch real market ticker (CORS-enabled public APIs)
   useEffect(() => {
@@ -82,7 +87,44 @@ export default function DashboardPage() {
       .finally(() => setIsLoadingUser(false));
   }, [isConnected, address]);
 
+  // Generate a market-data-only weighted quant signal for the connected wallet.
+  useEffect(() => {
+    if (!isConnected || !address) {
+      setQuantRecommendation(null);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingQuant(true);
+
+    getTradingRecommendation(address.toLowerCase(), "BNBUSDT", 30)
+      .then(({ recommendation }) => {
+        if (!cancelled) setQuantRecommendation(recommendation);
+      })
+      .catch((err) => {
+        console.warn("Failed to fetch weighted quant signal:", err);
+        if (!cancelled) setQuantRecommendation(null);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingQuant(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isConnected, address]);
+
   const latestTx = transactions.length > 0 ? transactions[0] : null;
+  const weightedSignal = quantRecommendation?.signal;
+  const compositePercent = weightedSignal
+    ? weightedSignal.composite * 100
+    : null;
+  const signalLabel =
+    compositePercent !== null && compositePercent > 0
+      ? t("bullish")
+      : compositePercent !== null && compositePercent < 0
+      ? t("bearish")
+      : t("neutral");
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -145,17 +187,31 @@ export default function DashboardPage() {
         <QuantStat
           title={t("quantProjection")}
           value={
-            bnbChange !== null
-              ? `${(50 + Math.min(Math.max(bnbChange * 4, -30), 40)).toFixed(1)}% ${
-                  bnbChange >= 0 ? t("bullish") : t("bearish")
-                }`
-              : `---% ${t("bullish")}`
+            isLoadingQuant
+              ? language === "id"
+                ? "Menganalisis..."
+                : "Analyzing..."
+              : compositePercent !== null
+              ? `${compositePercent >= 0 ? "+" : ""}${compositePercent.toFixed(1)} pts ${signalLabel}`
+              : language === "id"
+              ? "Hubungkan wallet"
+              : "Connect wallet"
           }
-          change={t("outlook")}
-          isPositive={bnbChange !== null ? bnbChange >= 0 : true}
-          sublabel={t("monteCarloEngine")}
+          change={
+            quantRecommendation
+              ? `MC ${(quantRecommendation.monte_carlo.prob_above_current * 100).toFixed(1)}% • ${t("outlook")}`
+              : language === "id"
+              ? "Data pasar diperlukan"
+              : "Market data required"
+          }
+          isPositive={compositePercent !== null ? compositePercent >= 0 : true}
+          sublabel={
+            weightedSignal
+              ? `MC ${Math.round(weightedSignal.weights.monte_carlo_prob * 100)} • S ${Math.round(weightedSignal.weights.sentiment * 100)} • M ${Math.round(weightedSignal.weights.momentum_24h * 100)}`
+              : t("monteCarloEngine")
+          }
           icon={<ArrowUpRight className="w-4 h-4" />}
-          tag={t("probability")}
+          tag={language === "id" ? "Sinyal berbobot" : "Weighted signal"}
         />
 
         {/* Latest Real Trade / Record */}

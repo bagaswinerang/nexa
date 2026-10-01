@@ -8,7 +8,6 @@ import {
   Wallet2,
   TrendingUp,
   Zap,
-  Bot,
   LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -28,15 +27,14 @@ export default function AppSidebar() {
       badge: "LIVE",
       badgeClass: "bg-amber-500/20 text-amber-300 border-amber-500/30",
     },
+    { href: "/dashboard/finance", label: t("finance"), icon: Wallet2 },
     {
-      href: "/dashboard/trading",
-      label: t("paperSandbox"),
-      icon: Bot,
+      href: "/dashboard/quant",
+      label: t("quantLab"),
+      icon: BarChart3,
       badge: "DEMO",
       badgeClass: "bg-[#00D492]/20 text-[#00D492] border-[#00D492]/30",
     },
-    { href: "/dashboard/finance", label: t("finance"), icon: Wallet2 },
-    { href: "/dashboard/quant", label: t("quantLab"), icon: BarChart3 },
   ];
 
   return (
