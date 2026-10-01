@@ -13,10 +13,9 @@ import { logger } from "hono/logger";
 
 import { env } from "./lib/env.js";
 import { testSupabaseConnection } from "./lib/supabase.js";
-import monteCarloRoute from "./routes/monte-carlo.route.js";
+import quantLabRoute from "./routes/monte-carlo.route.js";
 import chatRoute from "./routes/chat.route.js";
 import transactionRoute from "./routes/transaction.route.js";
-import tradingRoute from "./routes/trading.route.js";
 import liveTradingRoute from "./routes/live-trading.route.js";
 
 const app = new Hono();
@@ -33,10 +32,9 @@ app.use(
 );
 
 // ─── Routes ─────────────────────────────────────────────────────
-app.route("/monte-carlo", monteCarloRoute);
+app.route("/monte-carlo", quantLabRoute);
 app.route("/chat", chatRoute);
 app.route("/transactions", transactionRoute);
-app.route("/trading", tradingRoute);
 app.route("/live-trading", liveTradingRoute);
 
 // ─── Health Check with Live DB Check ────────────────────────────
@@ -64,16 +62,11 @@ app.get("/", (c) => {
     endpoints: {
       health: "GET /health",
       chat: "POST /chat",
-      simulate: "POST /monte-carlo/simulate",
-      market_data: "GET /monte-carlo/market-data/:symbol",
+      quant_lab: "POST /monte-carlo/simulate",
       transactions: "GET|POST /transactions",
       transaction_summary: "GET /transactions/summary",
-      trading_recommend: "POST /trading/recommend",
-      trading_execute: "POST /trading/execute",
-      trading_auto: "POST /trading/auto",
-      trading_portfolio: "GET /trading/portfolio",
-      trading_reset: "POST /trading/reset",
       live_balances: "GET /live-trading/balances",
+      live_recommend: "POST /live-trading/recommend",
       live_execute: "POST /live-trading/execute",
       live_auto: "POST /live-trading/auto",
     },

@@ -1,10 +1,10 @@
 import { generateRecommendation, type TradeRecommendation } from "./ai-recommend.js";
 import { executeLivePancakeSwap, type LiveTradeResponse } from "./pancakeswap-service.js";
 
-import { QUANT_DECISION_FACTORS } from "../config/trading-rules.js";
+import { MARKET_DECISION_FACTORS } from "../config/trading-rules.js";
 const AUTO_TRADE_INTERVAL_MS = 60_000;
 
-type AutoTradeOptions = { userAddress: string; symbol: string; forecastDays: number };
+type AutoTradeOptions = { userAddress: string; symbol: string };
 
 export type AutonomousDecision = {
   timestamp: string;
@@ -42,11 +42,11 @@ async function runCycle(session: AutoTradeSession) {
   session.status.last_cycle_at = new Date().toISOString();
   session.status.last_error = undefined;
   try {
-    const recommendation = await generateRecommendation(session.options.userAddress, session.options.symbol, session.options.forecastDays);
+    const recommendation = await generateRecommendation(session.options.userAddress, session.options.symbol);
     session.status.last_recommendation = recommendation;
     session.status.last_action = recommendation.action;
     let trade: LiveTradeResponse | undefined;
-    const minimumConfidence = QUANT_DECISION_FACTORS.THRESHOLDS.DEFAULT_MIN_CONFIDENCE_AUTO_SWAP;
+    const minimumConfidence = MARKET_DECISION_FACTORS.THRESHOLDS.DEFAULT_MIN_CONFIDENCE_AUTO_SWAP;
     const canExecute = recommendation.action !== "HOLD" && recommendation.amount_usdt > 0 && recommendation.confidence >= minimumConfidence;
 
     if (canExecute && (recommendation.action === "BUY" || recommendation.action === "SELL")) {

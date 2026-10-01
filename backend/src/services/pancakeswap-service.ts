@@ -265,6 +265,9 @@ export async function executeLivePancakeSwap(
       60 * EXECUTION_GUARDRAILS.TX_DEADLINE_MINUTES,
   );
   const symbol = req.symbol || "BNBUSDT";
+  if (symbol.toUpperCase() !== "BNBUSDT") {
+    throw new Error("Only BNB/USDT can be executed with the tBNB/tUSDT agent.");
+  }
 
   // Check USDT decimals
   const usdtDecimals =

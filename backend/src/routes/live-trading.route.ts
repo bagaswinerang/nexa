@@ -19,6 +19,7 @@ import {
   startAutonomousTrading,
   stopAutonomousTrading,
 } from "../services/autonomous-trading-service.js";
+import { generateRecommendation } from "../services/ai-recommend.js";
 
 const liveTrading = new Hono();
 
@@ -32,6 +33,19 @@ liveTrading.get("/balances", async (c) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch balances";
     return c.json({ error: message }, 500);
+  }
+});
+
+// Binance BNB/USDT signal with tBNB/tUSDT on-chain sizing.
+liveTrading.post("/recommend", async (c) => {
+  try {
+    const body = await c.req.json<{ user_address: string; symbol?: string }>();
+    if (!body.user_address) return c.json({ error: "user_address is required" }, 400);
+    const recommendation = await generateRecommendation(body.user_address, body.symbol || "BNBUSDT");
+    return c.json({ recommendation });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Recommendation failed";
+    return c.json({ error: message }, 400);
   }
 });
 
@@ -80,7 +94,6 @@ liveTrading.post("/auto", async (c) => {
     const body = await c.req.json<{
       user_address: string;
       symbol?: string;
-      forecast_days?: number;
     }>();
 
     if (!body.user_address) {
@@ -90,7 +103,6 @@ liveTrading.post("/auto", async (c) => {
     const status = startAutonomousTrading({
       userAddress: body.user_address,
       symbol: body.symbol || "BNBUSDT",
-      forecastDays: body.forecast_days || 14,
     });
     return c.json({ status }, 202);
   } catch (error) {

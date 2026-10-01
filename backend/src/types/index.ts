@@ -1,8 +1,5 @@
-/**
- * Shared TypeScript types for the Nexa backend.
- */
+/** Shared backend types. */
 
-// ─── Transaction ────────────────────────────────────────────────
 export interface Transaction {
   id: string;
   user_address: string;
@@ -25,41 +22,6 @@ export interface CreateTransactionBody {
   tx_hash?: string;
 }
 
-// ─── Monte Carlo ────────────────────────────────────────────────
-export interface SimulationRequest {
-  symbol?: string;
-  days?: number;
-  simulations?: number;
-  interval?: string;
-  lookback_days?: number;
-}
-
-export interface PercentileResult {
-  percentile: number;
-  price: number;
-}
-
-export interface SimulationResponse {
-  symbol: string;
-  current_price: number;
-  days_simulated: number;
-  num_simulations: number;
-  mean_price: number;
-  median_price: number;
-  std_dev: number;
-  min_price: number;
-  max_price: number;
-  percentiles: PercentileResult[];
-  prob_above_current: number;
-  prob_above_10pct: number;
-  prob_below_10pct: number;
-  annual_drift: number;
-  annual_volatility: number;
-  sample_paths: number[][];
-  final_prices: number[];
-}
-
-// ─── Market Data ────────────────────────────────────────────────
 export interface MarketData {
   symbol: string;
   price: number;
@@ -72,11 +34,39 @@ export interface MarketData {
   fear_greed_label: string | null;
 }
 
-// ─── Chat ───────────────────────────────────────────────────────
+export interface SimulationRequest {
+  symbol?: string;
+  horizon?: "24h" | "7d" | "14d" | "30d" | "60d" | "90d";
+  simulations?: number;
+}
+
+export interface SimulationResponse {
+  symbol: string;
+  horizon: string;
+  current_price: number;
+  periods_simulated: number;
+  days_simulated: number;
+  period_label: string;
+  num_simulations: number;
+  mean_price: number;
+  median_price: number;
+  std_dev: number;
+  min_price: number;
+  max_price: number;
+  percentiles: { percentile: number; price: number }[];
+  prob_above_current: number;
+  prob_above_10pct: number;
+  prob_below_10pct: number;
+  annual_drift: number;
+  annual_volatility: number;
+  sample_paths: number[][];
+  final_prices: number[];
+}
+
 export interface ChatMessage {
-  role: "user" | "model";
+  role: "user" | "assistant" | "model";
   content: string;
-  thought?: string;
+  timestamp?: string;
 }
 
 export interface ChatRequest {
@@ -85,11 +75,4 @@ export interface ChatRequest {
   user_address?: string;
   is_thinking?: boolean;
   model?: string;
-}
-
-export interface ChatResponse {
-  reply: string;
-  thought?: string;
-  model_used?: string;
-  tool_calls?: string[];
 }
