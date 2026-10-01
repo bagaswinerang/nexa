@@ -5,7 +5,7 @@
  * Pusat konfigurasi tampilan, batas input, dan default nominal untuk:
  * - DEX Trading Card (Swap tBNB <-> tUSDT)
  * - Modal Deposit & Penarikan On-Chain
- * - AI Quant Auto-Execution Threshold
+ * - AI auto-execution guardrails
  */
 
 export const TRADING_UI_CONFIG = {
@@ -45,7 +45,5 @@ export const TRADING_UI_CONFIG = {
     /** Ambang confidence minimum untuk tampilan eksekusi otomatis */
 
     MIN_CONFIDENCE_PCT: 35,
-    /** Default forecast days untuk Monte Carlo */
-    FORECAST_DAYS: 14,
   },
 } as const;

@@ -140,7 +140,14 @@ export default function LivePancakeSwapCard({
     }
   };
 
-  const applyAutoStatus = (status: LiveAutonomousStatus) => {
+  const applyAutoStatus = (status?: LiveAutonomousStatus) => {
+    if (!status || typeof status.active !== "boolean") {
+      setMessage({
+        type: "error",
+        text: "Status AI Agent tidak valid dari backend. Restart backend lalu coba lagi.",
+      });
+      return;
+    }
     setIsAutoRunning(status.active);
     if (status.recent_decisions?.length) setAutoDecisionLogs(status.recent_decisions);
     if (status.last_recommendation) {
@@ -184,8 +191,8 @@ export default function LivePancakeSwapCard({
     let disposed = false;
     const refreshAutoStatus = async () => {
       try {
-        const { status } = await getLiveAutoTradeStatus(userAddress);
-        if (!disposed) applyAutoStatus(status);
+        const response = await getLiveAutoTradeStatus(userAddress);
+        if (!disposed) applyAutoStatus(response.status);
       } catch (error) {
         console.error("Failed to load autonomous trading status:", error);
       }
@@ -381,12 +388,12 @@ export default function LivePancakeSwapCard({
     setMessage(null);
     setAiAnalysisResult(null);
     try {
-      const { status } = await executeLiveAutoTrade({
+      const response = await executeLiveAutoTrade({
         user_address: userAddress,
         symbol: "BNBUSDT",
-        forecast_days: TRADING_UI_CONFIG.AI_GUARDRAIL.FORECAST_DAYS,
       });
-      applyAutoStatus(status);
+      if (!response.status) throw new Error("Backend tidak mengembalikan status AI Agent.");
+      applyAutoStatus(response.status);
       setMessage({
         type: "success",
         text: "AI Agent aktif dan akan terus menganalisis serta mengeksekusi sinyal sampai Anda menekan Stop.",
@@ -434,7 +441,7 @@ export default function LivePancakeSwapCard({
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-lg font-bold text-white tracking-wide">
-                Nexa Autonomous Quant Agent
+                Nexa Autonomous BNB Agent
               </h3>
               <span className="px-2 py-0.5 text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-full">
                 Real On-Chain
@@ -1010,12 +1017,8 @@ export default function LivePancakeSwapCard({
             </div>
 
             <p className="text-xs text-slate-400 leading-relaxed">
-              AI Agent akan menganalisis kondisi market secara real-time
-              menggunakan{" "}
-              <span className="text-amber-300 font-semibold">
-                Monte Carlo Simulation
-              </span>
-              ,{" "}
+              AI Agent akan menganalisis harga dan perubahan 24 jam BNB/USDT
+              langsung dari Binance, kemudian memakai{" "}
               <span className="text-amber-300 font-semibold">
                 Fear & Greed Index
               </span>
@@ -1023,7 +1026,7 @@ export default function LivePancakeSwapCard({
               <span className="text-amber-300 font-semibold">
                 Momentum 24 Jam
               </span>
-              , lalu terus mengevaluasi dan mengeksekusi swap secara otonom di PancakeSwap sampai Anda menekan Stop.
+              . Nominal swap dihitung dari saldo tBNB/tUSDT agent yang terbaca on-chain, lalu dieksekusi di PancakeSwap sampai Anda menekan Stop.
             </p>
 
             {/* Balance Info */}

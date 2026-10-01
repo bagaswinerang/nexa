@@ -34,17 +34,13 @@ const MonteCarloChart = dynamic(
 
 const POPULAR_PAIRS = [
   { symbol: "BNBUSDT", label: "BNB/USDT" },
-  { symbol: "BTCUSDT", label: "BTC/USDT" },
-  { symbol: "ETHUSDT", label: "ETH/USDT" },
-  { symbol: "SOLUSDT", label: "SOL/USDT" },
-  { symbol: "DOGEUSDT", label: "DOGE/USDT" },
 ];
 
-const DAYS_OPTIONS = [7, 14, 30, 60, 90];
+const DAYS_OPTIONS = [1, 7, 14, 30, 60, 90];
 
 export default function QuantPage() {
   const { t, language } = useLanguage();
-  const [symbol, setSymbol] = useState("BNBUSDT");
+  const symbol = "BNBUSDT";
   const [days, setDays] = useState(30);
   const { result, isLoading, error, simulate } = useMonteCarlo();
 
@@ -97,7 +93,6 @@ export default function QuantPage() {
               {POPULAR_PAIRS.map((pair) => (
                 <button
                   key={pair.symbol}
-                  onClick={() => setSymbol(pair.symbol)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-mono font-medium transition-all ${
                     symbol === pair.symbol
                       ? "bg-[#26A17B] text-black font-bold shadow-md shadow-[#26A17B]/25"
@@ -126,7 +121,7 @@ export default function QuantPage() {
                       : "bg-[#080B11] border border-[#1E2738] text-gray-400 hover:text-white"
                   }`}
                 >
-                  {t("daysUnit", { days: d })}
+                  {d === 1 ? "24 Jam" : t("daysUnit", { days: d })}
                 </button>
               ))}
             </div>
@@ -207,7 +202,7 @@ export default function QuantPage() {
               value={`${(result.annual_volatility * 100).toFixed(1)}%`}
               change={t("historical365d")}
               isPositive={true}
-              sublabel="Binance & CoinGecko"
+              sublabel="Binance historical candles"
               icon={<Activity className="w-4 h-4" />}
               tag={t("volatility")}
             />

@@ -4,8 +4,7 @@ import { useLanguage } from "@/components/layout/language-provider";
 import { useAccount } from "wagmi";
 import ConnectWallet from "@/components/layout/connect-wallet";
 import LivePancakeSwapCard from "@/components/dashboard/live-pancakeswap-card";
-import { Zap, ShieldCheck, ArrowRight, Bot, Coins, Cpu } from "lucide-react";
-import Link from "next/link";
+import { Zap, ShieldCheck, Coins, Cpu } from "lucide-react";
 
 export default function LiveAgentPage() {
   const { language } = useLanguage();
@@ -45,16 +44,6 @@ export default function LiveAgentPage() {
 
         <div className="flex items-center gap-3">
           <ConnectWallet />
-          <Link
-            href="/dashboard/trading"
-            className="px-3.5 py-2 rounded-xl border border-white/10 bg-[#080B11] text-xs font-mono text-slate-300 hover:text-white hover:border-[#00D492]/40 transition-all flex items-center gap-1.5"
-          >
-            <Bot className="w-3.5 h-3.5 text-[#00D492]" />
-            <span>
-              {language === "id" ? "Ke Sandbox Latihan" : "To Paper Sandbox"}
-            </span>
-            <ArrowRight className="w-3 h-3" />
-          </Link>
         </div>
       </div>
 

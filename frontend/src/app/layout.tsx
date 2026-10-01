@@ -5,16 +5,16 @@ import Web3Provider from "@/components/layout/web3-provider";
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
   title: {
-    default: "Nexa | DeFi Intelligence & Quant Terminal",
+    default: "Nexa | Live BNB/USDT Agent",
     template: "%s | Nexa",
   },
   description:
-    "AI-powered DeFi intelligence platform for market analysis, Monte Carlo simulations, and on-chain financial journaling on BNB Smart Chain.",
+    "AI-powered BNB/USDT market intelligence with tBNB/tUSDT execution on BNB Smart Chain.",
   applicationName: "Nexa",
   keywords: [
     "DeFi",
-    "quantitative finance",
-    "Monte Carlo simulation",
+    "BNB/USDT",
+    "Binance market data",
     "BNB Smart Chain",
     "on-chain journal",
     "AI market analysis",
@@ -38,21 +38,21 @@ export const metadata: Metadata = {
     type: "website",
     locale: "en_US",
     siteName: "Nexa",
-    title: "Nexa | DeFi Intelligence & Quant Terminal",
+    title: "Nexa | Live BNB/USDT Agent",
     description:
-      "AI-powered DeFi intelligence platform for market analysis, Monte Carlo simulations, and on-chain financial journaling.",
+      "Live Binance BNB/USDT intelligence with tBNB/tUSDT execution on BNB Smart Chain.",
     images: [
       {
         url: "/logo-card.png",
-        alt: "Nexa DeFi Intelligence & Quant Terminal",
+        alt: "Nexa Live BNB/USDT Agent",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Nexa | DeFi Intelligence & Quant Terminal",
+    title: "Nexa | Live BNB/USDT Agent",
     description:
-      "AI-powered DeFi intelligence for market analysis, simulations, and on-chain financial journaling.",
+      "Live BNB/USDT market intelligence and on-chain tBNB/tUSDT execution.",
     images: ["/logo-card.png"],
   },
   robots: {
