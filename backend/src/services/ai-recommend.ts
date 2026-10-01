@@ -2,17 +2,13 @@
  * AI Trading Recommendation Service.
  *
  * Combines Monte Carlo simulation results, market sentiment,
- * and user portfolio data to generate actionable trade recommendations.
+ * and market data to generate actionable trade recommendations.
  */
 
 import { runSimulation, getMarketData } from "./quant-client.js";
 import { getPortfolioStatus, type PaperPortfolio } from "./paper-trading.js";
-import { supabase } from "../lib/supabase.js";
 import type { SimulationResponse, MarketData } from "../types/index.js";
-import {
-  QUANT_DECISION_FACTORS,
-  TOKEN_LIMITS,
-} from "../config/trading-rules.js";
+import { QUANT_DECISION_FACTORS } from "../config/trading-rules.js";
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -39,12 +35,18 @@ export interface TradeRecommendation {
     fear_greed_label: string | null;
     price_change_24h_pct: number;
   };
-  portfolio_context: {
-    usdt_balance: number;
-    has_position: boolean;
-    position_size?: number;
-    unrealized_pnl?: number;
-    win_rate: number;
+  signal: {
+    composite: number;
+    components: {
+      monte_carlo: number;
+      sentiment: number;
+      momentum_24h: number;
+    };
+    weights: {
+      monte_carlo_prob: number;
+      sentiment: number;
+      momentum_24h: number;
+    };
   };
 
   timestamp: string;
@@ -88,16 +90,13 @@ export async function generateRecommendation(
     throw new Error(`Market data fetch failed: ${err}`);
   }
 
-  // 3. Get user's portfolio status
-  const { portfolio, unrealized_pnl } = await getPortfolioStatus(walletAddress);
+  // 3. Paper portfolio is used only for simulated order sizing, never for signal direction.
+  const { portfolio } = await getPortfolioStatus(walletAddress);
 
-  // 4. Get user's historical win rate from Supabase
-  const winRate = await getUserWinRate(walletAddress);
+  // 4. Compute the market-only composite signal.
+  const signal = computeSignal(mcResult, marketData);
 
-  // 5. Compute composite signal
-  const signal = computeSignal(mcResult, marketData, portfolio, unrealized_pnl);
-
-  // 6. Determine action, confidence, and sizing
+  // 5. Determine action, confidence, and paper-trade sizing.
   const { action, confidence, amount } = determineAction(
     signal,
     portfolio,
@@ -105,10 +104,10 @@ export async function generateRecommendation(
     marketData.price
   );
 
-  // 7. Generate human-readable reasoning
+  // 6. Generate human-readable reasoning
   const pair = symbol.replace("USDT", "/USDT");
   const reasoning = buildReasoning(action, confidence, mcResult, marketData, signal);
-  const riskWarning = buildRiskWarning(mcResult, marketData, portfolio);
+  const riskWarning = buildRiskWarning(mcResult, marketData);
 
   const recommendation: TradeRecommendation = {
     action,
@@ -132,12 +131,14 @@ export async function generateRecommendation(
       fear_greed_label: marketData.fear_greed_label,
       price_change_24h_pct: marketData.price_change_pct_24h,
     },
-    portfolio_context: {
-      usdt_balance: portfolio.usdt_balance,
-      has_position: !!portfolio.positions[symbol],
-      position_size: portfolio.positions[symbol]?.quantity,
-      unrealized_pnl: unrealized_pnl,
-      win_rate: winRate,
+    signal: {
+      composite: signal.composite,
+      components: {
+        monte_carlo: signal.mc_score,
+        sentiment: signal.sentiment_score,
+        momentum_24h: signal.momentum_score,
+      },
+      weights: { ...WEIGHTS },
     },
     timestamp: new Date().toISOString(),
   };
@@ -155,15 +156,12 @@ interface CompositeSignal {
   mc_score: number; // -1 to +1
   sentiment_score: number; // -1 to +1
   momentum_score: number; // -1 to +1
-  risk_score: number; // -1 to +1
   composite: number; // Weighted sum
 }
 
 function computeSignal(
   mc: SimulationResponse,
-  market: MarketData,
-  portfolio: PaperPortfolio,
-  unrealizedPnl: number
+  market: MarketData
 ): CompositeSignal {
   // MC Score: based on probability of going up vs down
   // prob_above_current = 0.7 → score = +0.4 (bullish)
@@ -190,33 +188,12 @@ function computeSignal(
   const pctChange = market.price_change_pct_24h;
   const momentum_score = Math.max(-1, Math.min(1, pctChange / 5)); // Normalize to [-1, 1]
 
-  // Risk Score: portfolio concentration and PnL management
-  let risk_score = 0;
-  const positionsValue = Object.values(portfolio.positions).reduce(
-    (sum, p) => sum + p.current_value,
-    0
-  );
-  const totalEquity = portfolio.usdt_balance + positionsValue;
-  const investedRatio = positionsValue / totalEquity;
-
-  if (investedRatio > 0.7) {
-    risk_score = -0.5; // Over-concentrated, bias toward SELL
-  } else if (investedRatio < 0.3) {
-    risk_score = 0.3; // Underinvested, bias toward BUY
-  }
-
-  // If unrealized PnL is very negative, bias toward HOLD/SELL
-  if (unrealizedPnl < -totalEquity * 0.1) {
-    risk_score -= 0.3;
-  }
-
   const composite =
     mc_score * WEIGHTS.monte_carlo_prob +
     sentiment_score * WEIGHTS.sentiment +
-    momentum_score * WEIGHTS.momentum_24h +
-    risk_score * WEIGHTS.portfolio_risk;
+    momentum_score * WEIGHTS.momentum_24h;
 
-  return { mc_score, sentiment_score, momentum_score, risk_score, composite };
+  return { mc_score, sentiment_score, momentum_score, composite };
 }
 
 // ─── Action Determination ───────────────────────────────────────
@@ -232,17 +209,16 @@ function determineAction(
 
   // Thresholds from ../config/trading-rules.ts
   const { BUY_THRESHOLD, SELL_THRESHOLD } = QUANT_DECISION_FACTORS.THRESHOLDS;
-  const { MIN_SIZE_PCT, MAX_SIZE_PCT } = QUANT_DECISION_FACTORS.SIZING;
+  const { MAX_SIZE_PCT } = QUANT_DECISION_FACTORS.SIZING;
 
   let action: "BUY" | "SELL" | "HOLD";
   let amount = 0;
 
   if (signal.composite > BUY_THRESHOLD) {
     action = "BUY";
-    // Size dynamically between MIN_SIZE_PCT and MAX_SIZE_PCT based on confidence
-    const sizePct = MIN_SIZE_PCT + (confidence / 100) * (MAX_SIZE_PCT - MIN_SIZE_PCT);
+    // Size from zero up to MAX_SIZE_PCT based on confidence; no minimum order size.
+    const sizePct = (confidence / 100) * MAX_SIZE_PCT;
     amount = Math.min(portfolio.usdt_balance * sizePct, portfolio.usdt_balance * MAX_SIZE_PCT);
-    amount = Math.max(TOKEN_LIMITS.MIN_SWAP_USDT, amount);
     if (amount > portfolio.usdt_balance) {
       action = "HOLD";
       amount = 0;
@@ -254,7 +230,6 @@ function determineAction(
       // Sell 30-50% of position based on signal strength
       const sellPct = 0.3 + absSignal * 0.2;
       amount = position.quantity * currentPrice * sellPct;
-      amount = Math.max(TOKEN_LIMITS.MIN_SWAP_USDT, amount);
     } else {
       action = "HOLD";
     }
@@ -310,8 +285,7 @@ function buildReasoning(
 
 function buildRiskWarning(
   mc: SimulationResponse,
-  market: MarketData,
-  portfolio: PaperPortfolio
+  market: MarketData
 ): string {
   const warnings: string[] = [];
 
@@ -329,15 +303,6 @@ function buildRiskWarning(
     warnings.push(`⚠️ Extreme Fear detected — high volatility expected.`);
   }
 
-  const positionsValue = Object.values(portfolio.positions).reduce(
-    (sum, p) => sum + p.current_value,
-    0
-  );
-  const totalEquity = portfolio.usdt_balance + positionsValue;
-  if (positionsValue > totalEquity * 0.7) {
-    warnings.push(`⚠️ Portfolio is >70% invested. Consider reducing exposure.`);
-  }
-
   warnings.push(
     "This is a paper trading simulation. Not financial advice (DYOR)."
   );
@@ -346,20 +311,3 @@ function buildRiskWarning(
 }
 
 // ─── Helper ─────────────────────────────────────────────────────
-
-async function getUserWinRate(walletAddress: string): Promise<number> {
-  try {
-    const { data } = await supabase
-      .from("transactions")
-      .select("category")
-      .eq("user_address", walletAddress.toLowerCase())
-      .in("category", ["Trade Profit", "Trade Loss"]);
-
-    if (!data || data.length === 0) return 0;
-
-    const wins = data.filter((t) => t.category === "Trade Profit").length;
-    return (wins / data.length) * 100;
-  } catch {
-    return 0;
-  }
-}

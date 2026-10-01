@@ -5,16 +5,10 @@
  * Interacts directly with PancakeSwap Router smart contract using Viem.
  * Enables AI agents to autonomously swap BNB <-> USDT on-chain with real execution.
  *
- * CHANGELOG (fixes):
- * - Daily cap is now checked AFTER the amount is clamped to the real balance
- *   (previously the raw requested amount was checked, causing false rejections).
- * - Daily cap error message now shows the requested amount, not just spent-today.
- * - Input validation (finite, > 0) for trade & withdrawal amounts, address validation.
- * - MAX_DAILY_SPEND_USDT is parsed to Number before comparison.
- * - SELL now also records its value in USDT (amountOut) so `transactions.amount`
- *   is always in USDT terms (was mixing tBNB and tUSDT units).
- * - Avoid exponent notation in parseUnits/parseEther (toFixed instead of toString).
- * - Fail-closed option for daily cap if Supabase is unreachable (see FAIL_CLOSED_ON_CAP_ERROR).
+ * Execution notes:
+ * - Trade requests must be finite and greater than zero.
+ * - There is no daily spending cap or minimum trade amount.
+ * - BNB sells retain the configured gas reserve.
  */
 
 import {
@@ -36,11 +30,7 @@ import { env } from "../lib/env.js";
 import { supabase } from "../lib/supabase.js";
 import { generateEmbedding } from "./embedding.js";
 import { ERC20_ABI, PANCAKE_ROUTER_ABI } from "../lib/abis.js";
-import {
-  TOKEN_LIMITS,
-  GAS_SAFETY_CONFIG,
-  EXECUTION_GUARDRAILS,
-} from "../config/trading-rules.js";
+import { GAS_SAFETY_CONFIG, EXECUTION_GUARDRAILS } from "../config/trading-rules.js";
 
 // ─── Network & Clients Setup ─────────────────────────────────────
 
@@ -88,21 +78,6 @@ const routerAddress = env.PANCAKESWAP_ROUTER as Address;
 const wbnbAddress = env.WBNB_ADDRESS as Address;
 const usdtAddress = env.USDT_ADDRESS as Address;
 
-/** Daily spend limit parsed to a real number (env values may be strings). */
-const MAX_DAILY_SPEND_USDT = (() => {
-  const n = Number(env.MAX_DAILY_SPEND_USDT);
-  return Number.isFinite(n) && n > 0
-    ? n
-    : EXECUTION_GUARDRAILS.FALLBACK_MAX_DAILY_SPEND_USDT;
-})();
-
-/**
- * If true, a Supabase failure while checking the daily cap BLOCKS the swap
- * (safer for mainnet). If false, it only logs a warning and continues.
- * Recommended: true on mainnet, false is fine on testnet.
- */
-const FAIL_CLOSED_ON_CAP_ERROR = !isTestnet;
-
 function getAgentAccount() {
   if (!env.AGENT_PRIVATE_KEY || env.AGENT_PRIVATE_KEY.trim() === "") {
     return null;
@@ -122,51 +97,6 @@ function assertValidAmount(amount: number, label = "amount") {
 function assertValidAddress(addr: string, label = "address") {
   if (!isAddress(addr)) {
     throw new Error(`Invalid ${label}: ${addr}`);
-  }
-}
-
-// ─── Guardrail: Daily Safety Cap ─────────────────────────────────
-
-/**
- * Ensures (spent today + additionalUsdt) does not exceed the daily limit.
- * `additionalUsdt` MUST be the amount that will actually be spent
- * (after clamping to the wallet balance), not the raw requested amount.
- */
-async function assertWithinDailyCap(
-  userAddress: string,
-  additionalUsdt: number,
-) {
-  assertValidAmount(additionalUsdt, "trade amount");
-
-  const startOfDay = new Date();
-  startOfDay.setUTCHours(0, 0, 0, 0);
-
-  const { data, error } = await supabase
-    .from("transactions")
-    .select("amount")
-    .eq("user_address", userAddress.toLowerCase())
-    .eq("category", "Live Trade")
-    .eq("is_income", false) // BUY rows only; amount is always in USDT
-    .gte("created_at", startOfDay.toISOString());
-
-  if (error) {
-    const msg = `[PancakeSwap] Failed to check daily cap: ${error.message}`;
-    if (FAIL_CLOSED_ON_CAP_ERROR) {
-      throw new Error(`${msg}. Swap prevented (fail-closed).`);
-    }
-    console.warn(msg);
-    return;
-  }
-
-  const spentToday = (data ?? []).reduce(
-    (sum, row) => sum + (Number(row.amount) || 0),
-    0,
-  );
-
-  if (spentToday + additionalUsdt > MAX_DAILY_SPEND_USDT) {
-    throw new Error(
-      `Daily safety cap reached: spent $${spentToday.toFixed(4)} + requested $${additionalUsdt.toFixed(4)} exceeds limit $${MAX_DAILY_SPEND_USDT} USDT. Swap prevented.`,
-    );
   }
 }
 
@@ -220,7 +150,6 @@ export async function getLiveBalances(customWallet?: string) {
       usdt_balance: 0,
       network: networkLabel,
       explorer_url: explorerUrl,
-      max_daily_spend_usdt: MAX_DAILY_SPEND_USDT,
     };
   }
 
@@ -256,7 +185,6 @@ export async function getLiveBalances(customWallet?: string) {
       usdt_balance: usdtBalance,
       network: networkLabel,
       explorer_url: `${explorerUrl}/address/${target}`,
-      max_daily_spend_usdt: MAX_DAILY_SPEND_USDT,
     };
   } catch (err) {
     console.error("[PancakeSwap] Error fetching balances:", err);
@@ -267,7 +195,6 @@ export async function getLiveBalances(customWallet?: string) {
       usdt_balance: 0,
       network: networkLabel,
       explorer_url: `${explorerUrl}/address/${target}`,
-      max_daily_spend_usdt: MAX_DAILY_SPEND_USDT,
       error: String(err),
     };
   }
@@ -359,11 +286,9 @@ export async function executeLivePancakeSwap(
   let estimatedAmountOut = 0;
 
   if (req.action === "BUY") {
-    // ─── BUY tBNB with tUSDT ────────────────────────────────────────
     const path: Address[] = [usdtAddress, wbnbAddress];
     let amountInWei = parseUnits(requestedUsdt.toFixed(6), usdtDecimals);
 
-    // Check tUSDT balance
     const usdtBal = (await publicClient.readContract({
       address: usdtAddress,
       abi: ERC20_ABI,
@@ -371,28 +296,18 @@ export async function executeLivePancakeSwap(
       args: [account.address],
     })) as bigint;
 
-    const minUsdtWei = parseUnits(
-      TOKEN_LIMITS.MIN_SWAP_USDT.toString(),
-      usdtDecimals,
-    );
-    if (usdtBal < minUsdtWei) {
-      throw new Error(
-        `Saldo ${tokenInName} Agent tidak cukup (minimal ${TOKEN_LIMITS.MIN_SWAP_USDT} ${tokenInName}). Tersedia: ${formatUnits(usdtBal, usdtDecimals)} ${tokenInName}`,
-      );
+    if (usdtBal <= 0n) {
+      throw new Error(`Saldo ${tokenInName} Agent tidak cukup untuk ditradingkan.`);
     }
 
-    // Clamp to available balance
     if (usdtBal < amountInWei) {
       amountInWei = usdtBal;
       console.log(
-        `[PancakeSwap] ⚠️ Menyesuaikan jumlah trade dengan saldo yang tersedia: ${formatUnits(amountInWei, usdtDecimals)} ${tokenInName}`,
+        `[PancakeSwap] Trade amount adjusted to available balance: ${formatUnits(amountInWei, usdtDecimals)} ${tokenInName}`,
       );
     }
 
     actualAmountIn = parseFloat(formatUnits(amountInWei, usdtDecimals));
-
-    // ✅ FIX: check the daily cap using the amount that will ACTUALLY be spent
-    await assertWithinDailyCap(req.userAddress, actualAmountIn);
 
     // Exact Approve (Safety Best Practice)
     await ensureExactAllowance(
@@ -467,10 +382,8 @@ export async function executeLivePancakeSwap(
       );
     }
 
-    if (finalAmountInWei < parseEther(TOKEN_LIMITS.MIN_SWAP_BNB.toString())) {
-      throw new Error(
-        `Saldo ${tokenInName} yang dapat ditradingkan terlalu kecil (minimal ${TOKEN_LIMITS.MIN_SWAP_BNB} ${tokenInName} di luar cadangan gas ${GAS_SAFETY_CONFIG.TRADE_GAS_RESERVE_BNB} ${tokenInName}).`,
-      );
+    if (finalAmountInWei <= 0n) {
+      throw new Error(`Saldo ${tokenInName} yang dapat ditradingkan habis setelah cadangan gas ${GAS_SAFETY_CONFIG.TRADE_GAS_RESERVE_BNB} ${tokenInName} disisihkan.`);
     }
 
     actualAmountIn = parseFloat(formatEther(finalAmountInWei));

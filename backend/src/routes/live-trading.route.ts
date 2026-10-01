@@ -14,11 +14,11 @@ import {
   executeLiveWithdrawal,
   type LiveTradeRequest,
 } from "../services/pancakeswap-service.js";
-import { generateRecommendation } from "../services/ai-recommend.js";
 import {
-  TOKEN_LIMITS,
-  QUANT_DECISION_FACTORS,
-} from "../config/trading-rules.js";
+  getAutonomousTradingStatus,
+  startAutonomousTrading,
+  stopAutonomousTrading,
+} from "../services/autonomous-trading-service.js";
 
 const liveTrading = new Hono();
 
@@ -55,12 +55,6 @@ liveTrading.post("/execute", async (c) => {
       );
     }
 
-    if (body.amount_usdt < TOKEN_LIMITS.MIN_SWAP_USDT) {
-      return c.json(
-        { error: `Minimal swap adalah ${TOKEN_LIMITS.MIN_SWAP_USDT} tUSDT` },
-        400
-      );
-    }
 
     const trade = await executeLivePancakeSwap({
       action: body.action,
@@ -87,67 +81,37 @@ liveTrading.post("/auto", async (c) => {
       user_address: string;
       symbol?: string;
       forecast_days?: number;
-      min_confidence?: number;
     }>();
 
     if (!body.user_address) {
       return c.json({ error: "user_address is required" }, 400);
     }
 
-    const symbol = body.symbol || "BNBUSDT";
-    const minConfidence =
-      body.min_confidence ||
-      QUANT_DECISION_FACTORS.THRESHOLDS.DEFAULT_MIN_CONFIDENCE_AUTO_SWAP;
-    const forecastDays =
-      body.forecast_days ||
-      QUANT_DECISION_FACTORS.THRESHOLDS.DEFAULT_FORECAST_DAYS;
-
-    // 1. Generate AI recommendation (Monte Carlo + Market Data + Gemini)
-    const recommendation = await generateRecommendation(
-      body.user_address,
-      symbol,
-      forecastDays
-    );
-
-    // 2. If HOLD or low confidence, do not trade
-    if (
-      recommendation.action === "HOLD" ||
-      recommendation.confidence < minConfidence
-    ) {
-      return c.json({
-        executed: false,
-        action: recommendation.action,
-        confidence: recommendation.confidence,
-        reason: `Action is ${recommendation.action} (Confidence: ${recommendation.confidence}%, Min Required: ${minConfidence}%). No swap executed.`,
-        recommendation,
-      });
-    }
-
-    // 3. Execute live swap on PancakeSwap!
-    const trade = await executeLivePancakeSwap({
-      action: recommendation.action,
-      amountUsdt: recommendation.amount_usdt || TOKEN_LIMITS.MIN_SWAP_USDT,
+    const status = startAutonomousTrading({
       userAddress: body.user_address,
-      symbol,
-      reasoning: `[Auto AI Agent] ${recommendation.reasoning}`,
+      symbol: body.symbol || "BNBUSDT",
+      forecastDays: body.forecast_days || 14,
     });
-
-    return c.json(
-      {
-        executed: true,
-        action: recommendation.action,
-        trade,
-        recommendation,
-      },
-      201
-    );
+    return c.json({ status }, 202);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Auto trading failed";
-    console.error(`[LiveTrading] ❌ Auto error: ${message}`);
-    return c.json({ error: message }, 500);
+    const message = error instanceof Error ? error.message : "Unable to start autonomous trading";
+    console.error(`[LiveTrading] Auto start error: ${message}`);
+    return c.json({ error: message }, 400);
   }
 });
 
+liveTrading.get("/auto/status", (c) => {
+  const userAddress = c.req.query("user_address");
+  if (!userAddress) return c.json({ error: "user_address is required" }, 400);
+  return c.json({ status: getAutonomousTradingStatus(userAddress) });
+});
+
+liveTrading.post("/auto/stop", async (c) => {
+  const body = await c.req.json<{ user_address: string }>();
+  if (!body.user_address) return c.json({ error: "user_address is required" }, 400);
+  const status = stopAutonomousTrading(body.user_address) ?? getAutonomousTradingStatus(body.user_address);
+  return c.json({ status });
+});
 // ─── POST /live-trading/withdraw ─────────────────────────────────
 // On-chain transfer from agent back to user wallet
 liveTrading.post("/withdraw", async (c) => {

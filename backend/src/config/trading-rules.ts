@@ -12,24 +12,6 @@
  */
 
 // ─── 1. BATAS MINIMAL ORDER & TRANSAKSI (TOKEN LIMITS) ─────────────
-export const TOKEN_LIMITS = {
-  /**
-   * Minimal nominal pertukaran (Swap) tUSDT.
-   * Di testnet bisa sangat kecil (misal: 0.001 tUSDT).
-   */
-  MIN_SWAP_USDT: 0.001,
-
-  /**
-   * Minimal nominal tBNB yang dapat ditradingkan (di luar cadangan gas).
-   */
-  MIN_SWAP_BNB: 0.0001,
-
-  /**
-   * Minimal penarikan dana (Withdrawal) ke dompet user.
-   */
-  MIN_WITHDRAW_USDT: 0.001,
-  MIN_WITHDRAW_BNB: 0.001,
-} as const;
 
 // ─── 2. PROTEKSI GAS FEE BLOCKCHAIN (GAS RESERVES) ─────────────────
 export const GAS_SAFETY_CONFIG = {
@@ -57,10 +39,6 @@ export const EXECUTION_GUARDRAILS = {
    */
   TX_DEADLINE_MINUTES: 20,
 
-  /**
-   * Batas pengeluaran harian default (dalam USDT) jika belum di-set di .env.
-   */
-  FALLBACK_MAX_DAILY_SPEND_USDT: 99999999999999999999999999999999999999999999999999999999,
 } as const;
 
 // ─── 4. FAKTOR PENENTU KEPUTUSAN AI (QUANT DECISION ENGINE) ────────
@@ -70,13 +48,12 @@ export const QUANT_DECISION_FACTORS = {
    * - monte_carlo_prob: Bobot probabilitas simulasi masa depan (3000 jalur).
    * - sentiment: Bobot indikator Fear & Greed Index + Market Sentiment.
    * - momentum_24h: Bobot perubahan harga & volume 24 jam terakhir.
-   * - portfolio_risk: Bobot diversifikasi & risiko rasio modal dompet.
+   * Bobot hanya memakai data pasar; portofolio paper tidak memengaruhi sinyal.
    */
   WEIGHTS: {
-    monte_carlo_prob: 0.35,
-    sentiment: 0.25,
-    momentum_24h: 0.2,
-    portfolio_risk: 0.2,
+    monte_carlo_prob: 0.45,
+    sentiment: 0.3,
+    momentum_24h: 0.25,
   },
 
   /**
@@ -90,12 +67,13 @@ export const QUANT_DECISION_FACTORS = {
     /** Skor di bawah nilai ini memicu rekomendasi SELL */
     SELL_THRESHOLD: -0.15,
 
+
     /**
-     * Tingkat keyakinan minimum (Confidence %) agar Auto-Execution dijalankan.
-     * Jika confidence < nilai ini, eksekusi otomatis ditunda (HOLD demi keamanan).
+     * Tingkat keyakinan minimum agar rekomendasi boleh dieksekusi otomatis.
+     * Rumus confidence: Math.abs(composite signal) * 100 + 20.
+     * Dengan threshold BUY/SELL +/-0.15, nilai ini selaras dengan mesin quant.
      */
     DEFAULT_MIN_CONFIDENCE_AUTO_SWAP: 35,
-
     /**
      * Jumlah hari proyeksi default untuk Monte Carlo.
      */
@@ -106,9 +84,6 @@ export const QUANT_DECISION_FACTORS = {
    * Pengaturan ukuran porsi modal saat open order (Position Sizing).
    */
   SIZING: {
-    /** Porsi minimum modal (5% dari saldo) */
-    MIN_SIZE_PCT: 0.05,
-
     /** Porsi maksimum modal (25% dari saldo) */
     MAX_SIZE_PCT: 0.25,
   },

@@ -55,7 +55,4 @@ export const env = {
     "USDT_ADDRESS",
     "0x337610d27c682E347C9cD60BD4b3b107C9d34dDd",
   ),
-  MAX_DAILY_SPEND_USDT: parseFloat(
-    optionalEnv("MAX_DAILY_SPEND_USDT", "9999999"),
-  ),
 } as const;
