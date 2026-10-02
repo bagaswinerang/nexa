@@ -487,7 +487,7 @@ export default function LivePancakeSwapCard({
       applyAutoStatus(response.status);
       setMessage({
         type: "success",
-        text: "AI Agent aktif dan akan terus menganalisis serta mengeksekusi sinyal sampai Anda menekan Stop.",
+        text: "Analisis AI dimulai. Gemini hanya dipanggil untuk siklus ini; tekan Mulai lagi untuk analisis berikutnya.",
       });
     } catch (err) {
       const errMsg =
@@ -831,8 +831,8 @@ export default function LivePancakeSwapCard({
               : isAutoRunning
                 ? "Stop AI Agent"
                 : isAutoPaused
-                  ? "Lanjutkan AI Agent"
-                  : "Mulai AI Agent"}
+                  ? "Coba Lagi"
+                  : "Mulai Analisis AI"}
           </button>
         </div>
       </div>
@@ -1302,9 +1302,7 @@ export default function LivePancakeSwapCard({
                 className="flex-1 py-2.5 text-xs font-bold text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 rounded-xl transition-all shadow-md shadow-amber-500/20 flex items-center justify-center gap-1.5"
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
-                {isAutoPaused
-                  ? "Lanjutkan AI Agent"
-                  : "Mulai AI Agent Berkelanjutan"}
+                {isAutoPaused ? "Coba Analisis Lagi" : "Mulai Analisis AI"}
               </button>
             </div>
           </div>
