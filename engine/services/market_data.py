@@ -50,5 +50,21 @@ class MarketDataService:
             raise ValueError("Binance returned insufficient BNB/USDT candles")
         return prices
 
+    async def get_recent_candles(self, symbol: str, interval: str, limit: int) -> list[dict[str, int | float]]:
+        response = await self.client.get(f"{self.BINANCE_BASE}/klines?symbol={symbol.upper()}&interval={interval}&limit={limit}", headers=self.headers)
+        response.raise_for_status()
+        return [
+            {
+                "open_time": int(candle[0]),
+                "open": float(candle[1]),
+                "high": float(candle[2]),
+                "low": float(candle[3]),
+                "close": float(candle[4]),
+                "volume": float(candle[5]),
+                "close_time": int(candle[6]),
+            }
+            for candle in response.json()
+        ]
+
     async def close(self) -> None:
         await self.client.aclose()

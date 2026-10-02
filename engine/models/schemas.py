@@ -6,7 +6,10 @@ from pydantic import BaseModel, Field
 
 class SimulationRequest(BaseModel):
     symbol: str = Field(default="BNBUSDT", min_length=3, max_length=20)
-    horizon: Literal["24h", "7d", "14d", "30d", "60d", "90d"] = "30d"
+    horizon: Literal[
+        "1h", "2h", "4h", "6h", "8h", "12h", "24h",
+        "7d", "14d", "30d", "60d", "90d"
+    ] = "24h"
     simulations: int = Field(default=3000, ge=100, le=10000)
 
 

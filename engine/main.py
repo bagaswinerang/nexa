@@ -1,7 +1,8 @@
 """Nexa Quant Lab: real Binance BNB/USDT data with Monte Carlo analytics."""
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from typing import Literal
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from config import config
 from models.schemas import HealthResponse, MarketDataResponse, SimulationRequest, SimulationResponse
@@ -11,7 +12,13 @@ from services.monte_carlo import MonteCarloService
 market_data = MarketDataService()
 monte_carlo = MonteCarloService()
 HORIZONS = {
-    "24h": ("1h", 24, 24 * 365, 24 * 14, "24 hours"),
+    "1h": ("5m", 12, 105120, 120, "1 hour"),
+    "2h": ("5m", 24, 105120, 144, "2 hours"),
+    "4h": ("5m", 48, 105120, 288, "4 hours"),
+    "6h": ("5m", 72, 105120, 288, "6 hours"),
+    "8h": ("5m", 96, 105120, 288, "8 hours"),
+    "12h": ("5m", 144, 105120, 288, "12 hours"),
+    "24h": ("5m", 288, 105120, 288, "24 hours"),
     "7d": ("1d", 7, 365, 180, "7 days"),
     "14d": ("1d", 14, 365, 180, "14 days"),
     "30d": ("1d", 30, 365, 180, "30 days"),
@@ -37,6 +44,17 @@ async def get_market_data(symbol: str):
         return await market_data.get_price(symbol)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Binance market data unavailable: {exc}") from exc
+
+@app.get("/market-data/{symbol}/candles")
+async def get_recent_candles(
+    symbol: str,
+    interval: Literal["1m", "5m", "15m", "1h", "4h", "1d"] = "1m",
+    limit: int = Query(default=6, ge=1, le=1000),
+):
+    try:
+        return await market_data.get_recent_candles(symbol, interval, limit)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Binance candle data unavailable: {exc}") from exc
 
 @app.post("/simulate", response_model=SimulationResponse)
 async def simulate(request: SimulationRequest):
