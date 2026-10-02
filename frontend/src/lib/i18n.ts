@@ -339,7 +339,7 @@ export type TranslationKey = keyof typeof translations.en;
 export const uiCopy = {
   en: {
     chatPlaceholder: "Ask about DeFi markets, Monte Carlo simulations, or portfolio...",
-    chatUnavailable: "Sorry, I can't respond right now. Make sure the backend is running on localhost:3001.",
+    chatUnavailable: "Nexa AI is temporarily unavailable. Please try again in a moment.",
     chatIntro: "Ask for DeFi market analysis, Monte Carlo simulations, or search your financial transaction history!",
     chatAssistantSubtitle: "Quant & DeFi Assistant",
     thoughtProcess: "AI Thought Process",
@@ -355,7 +355,7 @@ export const uiCopy = {
   },
   id: {
     chatPlaceholder: "Tanya analisis DeFi, simulasi Monte Carlo, atau portofolio...",
-    chatUnavailable: "Maaf, saya tidak dapat merespons saat ini. Pastikan backend berjalan di localhost:3001.",
+    chatUnavailable: "Nexa AI sedang tidak tersedia. Silakan coba lagi beberapa saat.",
     chatIntro: "Tanyakan analisis pasar DeFi, simulasi Monte Carlo, atau cari riwayat transaksi keuangan Anda!",
     chatAssistantSubtitle: "Asisten Kuant & DeFi",
     thoughtProcess: "Alur Berpikir AI",

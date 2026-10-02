@@ -6,7 +6,6 @@ import {
   BarChart3,
   Home,
   Wallet2,
-  TrendingUp,
   Zap,
   LogOut,
 } from "lucide-react";

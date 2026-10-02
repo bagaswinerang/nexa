@@ -5,7 +5,7 @@
  * Pusat konfigurasi tampilan, batas input, dan default nominal untuk:
  * - DEX Trading Card (Swap tBNB <-> tUSDT)
  * - Modal Deposit & Penarikan On-Chain
- * - AI auto-execution guardrails
+ * - AI alpha-based execution
  */
 
 export const TRADING_UI_CONFIG = {
@@ -35,15 +35,15 @@ export const TRADING_UI_CONFIG = {
   },
 
   /**
-   * Pengaturan AI Auto Swap Modal & Guardrails
+   * Pengaturan AI Auto Swap — quant-v3 alpha-based.
    */
   AI_GUARDRAIL: {
     /** Nilai cadangan gas fee yang disisihkan di backend */
     GAS_RESERVE_BNB: "0.001",
 
-
-    /** Ambang confidence minimum untuk tampilan eksekusi otomatis */
-
-    MIN_CONFIDENCE_PCT: 35,
+    /** Alpha threshold for entry (matches backend ALPHA.ENTRY_THRESHOLD). */
+    ALPHA_ENTRY_THRESHOLD: 0.15,
+    /** Cooldown between trades in minutes. */
+    COOLDOWN_MINUTES: 5,
   },
 } as const;

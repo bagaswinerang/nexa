@@ -51,7 +51,9 @@ export default function MonteCarloChart({ result }: MonteCarloChartProps) {
             tickLine={false}
             axisLine={{ stroke: "rgba(255,255,255,0.06)" }}
             label={{
-              value: "Simulation Horizon (Days)",
+              value: result.period_label
+                ? `Simulation Timeline (${result.period_label})`
+                : "Simulation Timeline",
               position: "insideBottom",
               offset: -5,
               fill: "#6B7280",

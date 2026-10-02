@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { X, Send, Bot, User, Loader2, Sparkles, Brain } from "lucide-react";
-import { sendChatMessage, type ChatMessage } from "@/lib/api";
+import { ApiError, sendChatMessage, type ChatMessage } from "@/lib/api";
 import { useAccount } from "wagmi";
 import ChatMessages from "./chat-messages";
 import NexaLettermark from "@/components/brand/logo";
@@ -19,7 +19,7 @@ export default function ChatDrawer({ isOpen, onClose }: ChatDrawerProps) {
   const { language } = useLanguage();
   const copy = uiCopy[language];
   const { address } = useAccount();
-  const effectiveWallet = (address || env.DEFAULT_DEV_WALLET).toLowerCase();
+  const effectiveWallet = (address || env.DEFAULT_DEV_WALLET || undefined)?.toLowerCase();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -65,11 +65,15 @@ export default function ChatDrawer({ isOpen, onClose }: ChatDrawerProps) {
         },
       ]);
     } catch (error) {
+      const message =
+        error instanceof ApiError
+          ? error.message
+          : copy.chatUnavailable;
       setMessages([
         ...newMessages,
         {
           role: "model",
-          content: `⚠️ ${copy.chatUnavailable}`,
+          content: `⚠️ ${message}`,
         },
       ]);
     } finally {

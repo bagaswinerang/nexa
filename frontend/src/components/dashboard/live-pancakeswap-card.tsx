@@ -37,11 +37,14 @@ import {
   stopLiveAutoTrade,
   executeLiveWithdrawal,
   getTransactionSummary,
+  getPaperPredictions,
+  getTransactions,
   createTransaction,
+  type PaperPrediction,
   type LiveBalancesResponse,
   type LiveAutonomousStatus,
   type LiveAutonomousDecision,
-  type LiveTradeResult,
+  type Transaction,
   type TransactionSummary,
 } from "@/lib/api";
 import { TRADING_UI_CONFIG } from "@/config/trading-config";
@@ -66,6 +69,17 @@ interface LivePancakeSwapCardProps {
   userAddress: string;
 }
 
+type AgentActivityRow = {
+  id: string;
+  action: "BUY" | "SELL" | "HOLD";
+  confidence: number | null;
+  summary: string;
+  timestamp: string;
+  status: string;
+  txHash?: string;
+  explorerUrl?: string;
+};
+
 export default function LivePancakeSwapCard({
   userAddress,
 }: LivePancakeSwapCardProps) {
@@ -80,13 +94,25 @@ export default function LivePancakeSwapCard({
   const [isSwapping, setIsSwapping] = useState(false);
   const [isAutoExecuting, setIsAutoExecuting] = useState(false);
   const [isAutoRunning, setIsAutoRunning] = useState(false);
+  const [isAutoPaused, setIsAutoPaused] = useState(false);
+  const [analysisCycle, setAnalysisCycle] = useState<{
+    state: "idle" | "analyzing" | "error";
+    error?: string;
+    startedAt?: string;
+  }>({ state: "idle" });
   const [copied, setCopied] = useState(false);
   const [amountUsdt, setAmountUsdt] = useState<number>(
     TRADING_UI_CONFIG.SWAP.DEFAULT_INPUT_USDT,
   );
-  const [recentTrades, setRecentTrades] = useState<LiveTradeResult[]>([]);
+  const [paperPredictions, setPaperPredictions] = useState<PaperPrediction[]>(
+    [],
+  );
+  const [tradeJournal, setTradeJournal] = useState<Transaction[]>([]);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const lastAutoTradeHashRef = useRef<string | null>(null);
-  const [autoDecisionLogs, setAutoDecisionLogs] = useState<LiveAutonomousDecision[]>([]);
+  const [autoDecisionLogs, setAutoDecisionLogs] = useState<
+    LiveAutonomousDecision[]
+  >([]);
   const [message, setMessage] = useState<{
     type: "success" | "error" | "info";
     text: string;
@@ -96,8 +122,11 @@ export default function LivePancakeSwapCard({
   const [aiAnalysisResult, setAiAnalysisResult] = useState<{
     action: string;
     confidence: number;
+    summary: string;
     reasoning: string;
-    executed: boolean;
+    executed: boolean | null;
+    source: "session" | "paper";
+    timestamp?: string;
   } | null>(null);
 
   // Auto Trade Confirmation Modal
@@ -149,31 +178,44 @@ export default function LivePancakeSwapCard({
       return;
     }
     setIsAutoRunning(status.active);
-    if (status.recent_decisions?.length) setAutoDecisionLogs(status.recent_decisions);
+    setIsAutoPaused(status.paused ?? false);
+    const cycleError = status.pause_reason || status.last_error;
+    const isAnalyzing =
+      status.is_analyzing ??
+      (status.active &&
+        Boolean(status.last_cycle_at) &&
+        !status.last_recommendation &&
+        !status.last_error);
+    setAnalysisCycle({
+      state: cycleError ? "error" : isAnalyzing ? "analyzing" : "idle",
+      error: cycleError,
+      startedAt: status.last_cycle_at,
+    });
+    if (status.recent_decisions?.length)
+      setAutoDecisionLogs(status.recent_decisions);
     if (status.last_recommendation) {
       const decision = status.recent_decisions?.[0];
       setAiAnalysisResult({
         action: status.last_recommendation.action,
         confidence: status.last_recommendation.confidence,
+        summary: status.last_recommendation.summary,
         reasoning: status.last_recommendation.reasoning,
-        executed: decision?.executed ?? false,
+        executed: decision?.executed ?? null,
+        source: "session",
+        timestamp: status.last_cycle_at,
       });
     }
-    const latestTrade = status.last_trade;
     const latestDecision = status.recent_decisions?.[0];
-    if (latestTrade) {
-      setRecentTrades((previous) => [latestTrade, ...previous.filter((trade) => trade.txHash !== latestTrade.txHash)].slice(0, 20));
-    }
     if (
       latestDecision?.executed &&
-      latestTrade?.success &&
-      latestTrade.txHash !== lastAutoTradeHashRef.current
+      status.last_trade?.success &&
+      status.last_trade.txHash !== lastAutoTradeHashRef.current
     ) {
-      lastAutoTradeHashRef.current = latestTrade.txHash;
+      lastAutoTradeHashRef.current = status.last_trade.txHash;
       setMessage({
         type: "success",
         text: "AI Recommend berhasil dieksekusi di PancakeSwap. Tx Hash terverifikasi di BscScan.",
-        txHash: latestTrade.txHash,
+        txHash: status.last_trade.txHash,
       });
       void fetchBalancesAndSummary();
     }
@@ -183,18 +225,67 @@ export default function LivePancakeSwapCard({
   }, [userAddress]);
 
   useEffect(() => {
+    setIsAutoRunning(false);
+    setIsAutoPaused(false);
+    setAnalysisCycle({ state: "idle" });
+    setAutoDecisionLogs([]);
+    setPaperPredictions([]);
+    setTradeJournal([]);
+    lastAutoTradeHashRef.current = null;
+    setAiAnalysisResult(null);
     if (!userAddress) {
-      setIsAutoRunning(false);
       return;
     }
 
     let disposed = false;
     const refreshAutoStatus = async () => {
       try {
-        const response = await getLiveAutoTradeStatus(userAddress);
-        if (!disposed) applyAutoStatus(response.status);
+        const [statusResult, paperResult, transactionResult] =
+          await Promise.all([
+            getLiveAutoTradeStatus(userAddress).catch((error) => {
+              console.error("Failed to load autonomous trading status:", error);
+              return null;
+            }),
+            getPaperPredictions(userAddress, 50).catch(() => null),
+            getTransactions(userAddress, 100).catch(() => null),
+          ]);
+        if (disposed) return;
+        setHistoryError(
+          paperResult && transactionResult
+            ? null
+            : "Riwayat Supabase belum tersedia. Periksa koneksi backend dan migrasi database.",
+        );
+        if (statusResult) applyAutoStatus(statusResult.status);
+        if (paperResult) {
+          setPaperPredictions(paperResult.predictions);
+          if (
+            !statusResult?.status.last_recommendation &&
+            paperResult.predictions[0]
+          ) {
+            const latest = paperResult.predictions[0];
+            setAiAnalysisResult(
+              (current) =>
+                current ?? {
+                  action: latest.action,
+                  confidence: latest.confidence,
+                  summary: latest.summary,
+                  reasoning: latest.reasoning,
+                  executed: null,
+                  source: "paper",
+                  timestamp: latest.predicted_at,
+                },
+            );
+          }
+        }
+        if (transactionResult) {
+          setTradeJournal(
+            transactionResult.transactions.filter(
+              (transaction) => transaction.category === "Live Trade",
+            ),
+          );
+        }
       } catch (error) {
-        console.error("Failed to load autonomous trading status:", error);
+        console.error("Failed to load AI Agent history:", error);
       }
     };
 
@@ -356,7 +447,6 @@ export default function LivePancakeSwapCard({
         reasoning: `Manual swap on PancakeSwap by ${userAddress.slice(0, 6)}...`,
       });
 
-      setRecentTrades((prev) => [res.trade, ...prev]);
       setMessage({
         type: "success",
         text: `Swap on PancakeSwap Berhasil! Tx Hash terverifikasi di BscScan.`,
@@ -392,14 +482,16 @@ export default function LivePancakeSwapCard({
         user_address: userAddress,
         symbol: "BNBUSDT",
       });
-      if (!response.status) throw new Error("Backend tidak mengembalikan status AI Agent.");
+      if (!response.status)
+        throw new Error("Backend tidak mengembalikan status AI Agent.");
       applyAutoStatus(response.status);
       setMessage({
         type: "success",
         text: "AI Agent aktif dan akan terus menganalisis serta mengeksekusi sinyal sampai Anda menekan Stop.",
       });
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : "Auto execution failed";
+      const errMsg =
+        err instanceof Error ? err.message : "Auto execution failed";
       setMessage({ type: "error", text: errMsg });
     } finally {
       setIsAutoExecuting(false);
@@ -412,9 +504,13 @@ export default function LivePancakeSwapCard({
     try {
       await stopLiveAutoTrade(userAddress);
       setIsAutoRunning(false);
-      setMessage({ type: "info", text: "AI Agent dihentikan. Tidak ada siklus trading baru yang akan dijalankan." });
+      setMessage({
+        type: "info",
+        text: "AI Agent dihentikan. Tidak ada siklus trading baru yang akan dijalankan.",
+      });
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : "Unable to stop AI Agent";
+      const errMsg =
+        err instanceof Error ? err.message : "Unable to stop AI Agent";
       setMessage({ type: "error", text: errMsg });
     } finally {
       setIsAutoExecuting(false);
@@ -425,8 +521,111 @@ export default function LivePancakeSwapCard({
   const userTotalDeposit = summary?.total_deposit ?? 0;
   const userTotalWithdraw = summary?.total_withdrawal ?? 0;
 
-  const agentExplorerBase = balances?.network.includes("Testnet") ? "https://testnet.bscscan.com" : "https://bscscan.com";
-  const agentWalletExplorerUrl = balances?.wallet_address ? `${agentExplorerBase}/address/${balances.wallet_address}` : "";
+  const agentExplorerBase = balances?.network.includes("Testnet")
+    ? "https://testnet.bscscan.com"
+    : "https://bscscan.com";
+  const agentWalletExplorerUrl = balances?.wallet_address
+    ? `${agentExplorerBase}/address/${balances.wallet_address}`
+    : "";
+  const latestPaperPrediction = paperPredictions[0];
+  const analysisToDisplay =
+    aiAnalysisResult ??
+    (latestPaperPrediction
+      ? {
+          action: latestPaperPrediction.action,
+          confidence: latestPaperPrediction.confidence,
+          summary: latestPaperPrediction.summary,
+          reasoning: latestPaperPrediction.reasoning,
+          executed: null,
+          source: "paper" as const,
+          timestamp: latestPaperPrediction.predicted_at,
+        }
+      : null);
+  const analysisActionColor =
+    analysisToDisplay?.action === "BUY"
+      ? "text-emerald-400"
+      : analysisToDisplay?.action === "SELL"
+        ? "text-rose-400"
+        : analysisToDisplay?.action === "HOLD"
+          ? "text-amber-400"
+          : "text-slate-400";
+  const analysisBadgeColor =
+    analysisCycle.state === "analyzing"
+      ? "bg-sky-500/10 text-sky-300 border-sky-500/30"
+      : analysisCycle.state === "error"
+        ? "bg-rose-500/10 text-rose-400 border-rose-500/30"
+        : analysisToDisplay?.executed === true ||
+            analysisToDisplay?.action === "BUY"
+          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+          : analysisToDisplay?.action === "SELL"
+            ? "bg-rose-500/10 text-rose-400 border-rose-500/30"
+            : "bg-amber-500/10 text-amber-400 border-amber-500/30";
+  const decisionLogRows: AgentActivityRow[] = autoDecisionLogs.length
+    ? autoDecisionLogs.map((decision) => ({
+        id: `${decision.timestamp}-${decision.action}`,
+        action: decision.action,
+        confidence: decision.confidence,
+        summary: decision.summary,
+        reasoning: decision.reasoning,
+        timestamp: decision.timestamp,
+        status: decision.executed ? "on-chain executed" : "no swap",
+        txHash: decision.trade?.txHash,
+        explorerUrl: decision.trade?.explorerUrl,
+      }))
+    : paperPredictions.map((prediction) => ({
+        id: prediction.id,
+        action: prediction.action,
+        confidence: prediction.confidence,
+        summary: prediction.summary,
+        reasoning: prediction.reasoning,
+        timestamp: prediction.predicted_at,
+        status: !prediction.settled_at
+          ? "menunggu hasil 24 jam"
+          : prediction.direction_correct
+            ? "arah tepat"
+            : "arah meleset",
+      }));
+  const decisionTradeHashes = new Set(
+    decisionLogRows
+      .map((row) => row.txHash)
+      .filter((hash): hash is string => Boolean(hash)),
+  );
+  const liveTradeRows: AgentActivityRow[] = tradeJournal
+    .map((transaction) => {
+      const note = String(transaction.note || "")
+        .replace(/^\[PancakeSwap On-Chain\]\s*/, "")
+        .replace(/\s*\.\s*Reasoning:[\s\S]*$/, "")
+        .replace(/\bBNBUSDT\b/g, "BNB/USDT")
+        .replace(/\s*[·]\s*(?=\d)/, " — Ditukar ");
+      const action = /^(BUY|SELL|HOLD)\b/.exec(note)?.[1] as
+        | "BUY"
+        | "SELL"
+        | "HOLD"
+        | undefined;
+      const hash = transaction.tx_hash || "";
+      const isTestnet = transaction.pair?.startsWith("t") ?? false;
+      const explorerBase = isTestnet
+        ? "https://testnet.bscscan.com"
+        : "https://bscscan.com";
+      return {
+        id: `trade-${transaction.id}`,
+        action: action ?? "HOLD",
+        confidence: null,
+        summary: action ? note.slice(action.length).trimStart() : note,
+        timestamp: transaction.created_at,
+        status: "swap on-chain confirmed",
+        txHash: /^0x[a-fA-F0-9]{64}$/.test(hash) ? hash : undefined,
+        explorerUrl: /^0x[a-fA-F0-9]{64}$/.test(hash)
+          ? `${explorerBase}/tx/${hash}`
+          : undefined,
+      };
+    })
+    .filter((row) => !row.txHash || !decisionTradeHashes.has(row.txHash));
+  const activityLogRows = [...decisionLogRows, ...liveTradeRows]
+    .sort(
+      (left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp),
+    )
+    .slice(0, 50);
   return (
     <div className="bg-[#12161f]/90 border border-amber-500/30 rounded-2xl p-6 shadow-xl relative overflow-hidden">
       {/* Background glow badge */}
@@ -559,7 +758,7 @@ export default function LivePancakeSwapCard({
         <div className="bg-[#0b0e14] p-3.5 rounded-xl border border-white/5">
           <div className="text-[11px] text-slate-400 mb-1 flex items-center gap-1.5">
             <Coins className="w-3.5 h-3.5 text-amber-400" />
-            Saldo Gas Pool (tBNB)
+            Modal & Gas Reserve (tBNB)
           </div>
           <div className="text-base font-bold text-white">
             {balances?.bnb_balance.toFixed(4) ?? "0.0000"}{" "}
@@ -570,7 +769,7 @@ export default function LivePancakeSwapCard({
         <div className="bg-[#0b0e14] p-3.5 rounded-xl border border-white/5">
           <div className="text-[11px] text-slate-400 mb-1 flex items-center gap-1.5">
             <Coins className="w-3.5 h-3.5 text-emerald-400" />
-            Total Likuiditas Agent (tUSDT)
+            Posisi Trading Agent (tUSDT)
           </div>
           <div className="text-base font-bold text-emerald-400">
             ${balances?.usdt_balance.toFixed(4) ?? "0.0000"}{" "}
@@ -609,7 +808,7 @@ export default function LivePancakeSwapCard({
             className="flex-1 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
           >
             <Coins className="w-3.5 h-3.5" />
-            {isSwapping ? "Swapping..." : "Swap tUSDT → tBNB"}
+            {isSwapping ? "Swapping..." : "BUY tUSDT dari tBNB"}
           </button>
 
           <button
@@ -618,7 +817,7 @@ export default function LivePancakeSwapCard({
             className="flex-1 px-4 py-2.5 bg-rose-500 hover:bg-rose-600 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
           >
             <Coins className="w-3.5 h-3.5" />
-            {isSwapping ? "Swapping..." : "Swap tBNB → tUSDT"}
+            {isSwapping ? "Swapping..." : "SELL tUSDT ke tBNB"}
           </button>
 
           <button
@@ -627,7 +826,13 @@ export default function LivePancakeSwapCard({
             className="flex-1 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-all shadow-lg shadow-amber-500/20 flex items-center justify-center gap-1.5"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
-            {isAutoExecuting ? "Menyiapkan AI..." : isAutoRunning ? "Stop AI Agent" : "Mulai AI Agent"}
+            {isAutoExecuting
+              ? "Menyiapkan AI..."
+              : isAutoRunning
+                ? "Stop AI Agent"
+                : isAutoPaused
+                  ? "Lanjutkan AI Agent"
+                  : "Mulai AI Agent"}
           </button>
         </div>
       </div>
@@ -665,138 +870,158 @@ export default function LivePancakeSwapCard({
       )}
 
       {/* AI Analysis Result Card */}
-      {aiAnalysisResult && (
-        <div
-          className={`mb-5 p-5 rounded-2xl border ${aiAnalysisResult.executed ? "bg-emerald-500/10 border-emerald-500/30" : "bg-[#0b0e14] border-white/10"} relative overflow-hidden animate-fade-in shadow-lg`}
-        >
-          <div className="flex items-center gap-2 mb-4">
-            <Bot
-              className={`w-5 h-5 ${aiAnalysisResult.executed ? "text-emerald-400" : "text-amber-400"}`}
-            />
-            <h4
-              className={`text-sm font-bold ${aiAnalysisResult.executed ? "text-emerald-400" : "text-white"}`}
-            >
-              Laporan Analisis AI Agent
-            </h4>
-            {!aiAnalysisResult.executed && (
-              <span className="ml-auto text-[10px] font-mono bg-amber-500/10 text-amber-400 px-2.5 py-1 rounded-full border border-amber-500/30 font-semibold">
-                {aiAnalysisResult.action === "HOLD" ? "HOLD — MENUNGGU SINYAL" : "TIDAK DIEKSEKUSI"}
-              </span>
-            )}
-            {aiAnalysisResult.executed && (
-              <span className="ml-auto text-[10px] font-mono bg-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-full border border-emerald-500/30 font-semibold">
-                EKSEKUSI BERHASIL
-              </span>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-            <div className="bg-[#12161f]/80 p-3 rounded-xl border border-white/5 shadow-inner">
-              <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">
-                Keputusan
-              </div>
-              <div
-                className={`font-black text-lg ${aiAnalysisResult.action === "BUY" ? "text-emerald-400" : aiAnalysisResult.action === "SELL" ? "text-rose-400" : "text-slate-300"}`}
-              >
-                {aiAnalysisResult.action}
-              </div>
-            </div>
-            <div className="bg-[#12161f]/80 p-3 rounded-xl border border-white/5 shadow-inner">
-              <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">
-                Keyakinan
-              </div>
-              <div className="font-bold text-lg text-white">
-                {aiAnalysisResult.confidence.toFixed(1)}%
-              </div>
-            </div>
-            <div className="bg-[#12161f]/80 p-3 rounded-xl border border-white/5 shadow-inner">
-              <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">
-                Target Market
-              </div>
-              <div className="font-bold text-lg text-white">tBNB/tUSDT</div>
-            </div>
-            <div className="bg-[#12161f]/80 p-3 rounded-xl border border-white/5 shadow-inner">
-              <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">
-                Batas Eksekusi
-              </div>
-              <div className="font-bold text-lg text-slate-400">
-                Min. {TRADING_UI_CONFIG.AI_GUARDRAIL.MIN_CONFIDENCE_PCT}%
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-[#12161f] p-4 rounded-xl border border-white/5">
-            <div className="text-[11px] font-mono font-bold text-slate-400 mb-2 flex items-center gap-1.5 uppercase">
-              <Cpu className="w-3.5 h-3.5" /> Log Pemikiran (Reasoning)
-            </div>
-            <p className="text-[13px] text-slate-300 leading-relaxed">
-              {aiAnalysisResult.reasoning}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {autoDecisionLogs.length > 0 && (
-        <div className="mb-5 p-4 rounded-xl bg-[#0b0e14] border border-white/10">
-          <h4 className="text-xs font-semibold text-slate-300 mb-3">Log Keputusan AI Agent</h4>
-          <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
-            {autoDecisionLogs.map((decision) => (
-              <div key={`${decision.timestamp}-${decision.action}`} className="flex items-start justify-between gap-3 text-xs border-b border-white/5 pb-2 last:border-0 last:pb-0">
-                <div>
-                  <span className={`font-bold ${decision.action === "BUY" ? "text-emerald-400" : decision.action === "SELL" ? "text-rose-400" : "text-amber-400"}`}>{decision.action}</span>
-                  <span className="text-slate-500"> · {decision.confidence.toFixed(1)}% · {decision.executed ? "on-chain executed" : "no swap"}</span>
-                  <p className="text-slate-400 mt-1 line-clamp-2">{decision.reasoning}</p>
-                </div>
-                <span className="text-slate-500 whitespace-nowrap">{new Date(decision.timestamp).toLocaleTimeString()}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {/* Recent On-Chain Trades */}
-      {recentTrades.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-white/5">
-          <h4 className="text-xs font-semibold text-slate-300 mb-2">
-            Riwayat Swap On-Chain Terakhir:
+      <div
+        className={`mb-5 p-5 rounded-2xl border ${analysisToDisplay?.executed === true ? "bg-emerald-500/10 border-emerald-500/30" : "bg-[#0b0e14] border-white/10"} relative overflow-hidden shadow-lg`}
+      >
+        <div className="flex items-center gap-2 mb-4">
+          <Bot
+            className={`w-5 h-5 ${analysisToDisplay?.executed === true ? "text-emerald-400" : "text-amber-400"}`}
+          />
+          <h4
+            className={`text-sm font-bold ${analysisToDisplay?.executed === true ? "text-emerald-400" : "text-white"}`}
+          >
+            Laporan Analisis AI Agent
           </h4>
-          <div className="space-y-2">
-            {recentTrades.map((trade) => (
-              <div
-                key={trade.txHash}
-                className="flex items-center justify-between bg-[#0b0e14] px-3 py-2 rounded-lg text-xs border border-white/5"
-              >
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`font-semibold px-1.5 py-0.5 rounded text-[10px] ${
-                      trade.action === "BUY"
-                        ? "bg-emerald-500/20 text-emerald-400"
-                        : "bg-rose-500/20 text-rose-400"
-                    }`}
-                  >
-                    {trade.action}
-                  </span>
-                  <span className="text-slate-200">
-                    {trade.tokenIn && trade.tokenOut
-                      ? `${trade.amountIn.toFixed(4)} ${trade.tokenIn} ↔ ${trade.amountOut.toFixed(4)} ${trade.tokenOut}`
-                      : trade.action === "BUY"
-                        ? `${trade.amountIn.toFixed(4)} tUSDT ↔ ${trade.amountOut.toFixed(4)} tBNB`
-                        : `${trade.amountIn.toFixed(4)} tBNB ↔ ${trade.amountOut.toFixed(4)} tUSDT`}
-                  </span>
-                </div>
-                <a
-                  href={trade.explorerUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-amber-400 hover:text-amber-300 flex items-center gap-1 text-[11px]"
-                >
-                  BscScan <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
-            ))}
+          <span
+            className={`ml-auto text-[10px] font-mono px-2.5 py-1 rounded-full border font-semibold ${analysisBadgeColor}`}
+          >
+            {isAutoPaused
+              ? "AI AGENT DIJEDA"
+              : analysisCycle.state === "analyzing"
+                ? "SEDANG MENGANALISIS"
+                : analysisCycle.state === "error"
+                  ? "ANALISIS GAGAL"
+                  : analysisToDisplay?.source === "paper"
+                    ? "PREDIKSI TERSIMPAN"
+                    : analysisToDisplay?.executed === true
+                      ? "EKSEKUSI BERHASIL"
+                      : analysisToDisplay?.action === "HOLD"
+                        ? "HOLD — MENUNGGU SINYAL"
+                        : analysisToDisplay?.action
+                          ? "TIDAK DIEKSEKUSI"
+                          : "MENUNGGU ANALISIS"}
+          </span>
+        </div>
+        <p
+          className={`text-[10px] -mt-2 mb-4 ${analysisCycle.state === "error" ? "text-rose-400" : "text-slate-500"}`}
+        >
+          {analysisCycle.state === "analyzing"
+            ? `Mengambil data market dan menunggu Gemini${analysisCycle.startedAt ? ` · mulai ${new Date(analysisCycle.startedAt).toLocaleTimeString()}` : ""}`
+            : analysisCycle.state === "error"
+              ? `Siklus terakhir gagal: ${analysisCycle.error}`
+              : analysisToDisplay?.timestamp
+                ? `Analisis terakhir · ${new Date(analysisToDisplay.timestamp).toLocaleString()}`
+                : isConnected
+                  ? "Belum ada analisis tersimpan untuk wallet ini."
+                  : "Hubungkan wallet untuk melihat histori analisis."}
+        </p>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          <div className="bg-[#12161f]/80 p-3 rounded-xl border border-white/5 shadow-inner">
+            <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">
+              Keputusan (BUY = USDT)
+            </div>
+            <div className={`font-black text-lg ${analysisActionColor}`}>
+              {analysisToDisplay?.action ?? "—"}
+            </div>
+          </div>
+          <div className="bg-[#12161f]/80 p-3 rounded-xl border border-white/5 shadow-inner">
+            <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">
+              Keyakinan
+            </div>
+            <div className="font-bold text-lg text-white">
+              {analysisToDisplay
+                ? `${analysisToDisplay.confidence.toFixed(1)}%`
+                : "—"}
+            </div>
+          </div>
+          <div className="bg-[#12161f]/80 p-3 rounded-xl border border-white/5 shadow-inner">
+            <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">
+              Target Market
+            </div>
+            <div className="font-bold text-lg text-white">tBNB/tUSDT</div>
+          </div>
+          <div className="bg-[#12161f]/80 p-3 rounded-xl border border-white/5 shadow-inner">
+            <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1">
+              Syarat Trade
+            </div>
+            <div className="font-bold text-lg text-white">
+              Sinyal ≥ 15% · Jeda 5 menit
+            </div>
           </div>
         </div>
-      )}
 
+        <div className="bg-[#12161f] p-4 rounded-xl border border-white/5">
+          <div className="text-[11px] font-mono font-bold text-slate-400 mb-2 flex items-center gap-1.5 uppercase">
+            <Cpu className="w-3.5 h-3.5" /> Log Pemikiran (Reasoning)
+          </div>
+          <p className="text-[13px] text-slate-300 leading-relaxed">
+            {analysisToDisplay?.reasoning ??
+              (analysisCycle.state === "error"
+                ? analysisCycle.error
+                : analysisCycle.state === "analyzing"
+                  ? "Analisis pertama sedang berjalan. Laporan akan muncul setelah semua data dan guardrail selesai diperiksa."
+                  : isConnected
+                    ? "Laporan akan muncul setelah AI Agent menghasilkan analisis pertamanya."
+                    : "Hubungkan wallet untuk memuat laporan analisis.")}
+          </p>
+        </div>
+      </div>
+
+      <div className="mb-5 p-4 rounded-xl bg-[#0b0e14] border border-white/10">
+        <h4 className="text-xs font-semibold text-slate-300 mb-3">
+          Log Keputusan AI Agent
+        </h4>
+        {historyError && (
+          <p className="text-[11px] text-amber-400 mb-3">{historyError}</p>
+        )}
+        <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+          {activityLogRows.length === 0 ? (
+            <p className="py-4 text-center text-xs text-slate-500">
+              Belum ada log. Keputusan pertama akan tersimpan di sini dan tetap
+              terlihat setelah agent dihentikan.
+            </p>
+          ) : (
+            activityLogRows.map((decision) => (
+              <div
+                key={decision.id}
+                className="flex items-start justify-between gap-3 text-xs border-b border-white/5 pb-2 last:border-0 last:pb-0"
+              >
+                <div>
+                  <span
+                    className={`font-bold ${decision.action === "BUY" ? "text-emerald-400" : decision.action === "SELL" ? "text-rose-400" : "text-amber-400"}`}
+                  >
+                    {decision.action}
+                  </span>
+                  <span className="text-slate-500">
+                    {decision.confidence !== null
+                      ? ` · ${decision.confidence.toFixed(1)}% · ${decision.status}`
+                      : ` · ${decision.status}`}
+                  </span>
+                  <p className="text-slate-400 mt-1 line-clamp-2">
+                    {decision.summary}
+                  </p>
+                </div>
+                <span className="text-slate-500 whitespace-nowrap">
+                  {new Date(decision.timestamp).toLocaleString()}
+                </span>
+                {decision.explorerUrl && (
+                  <a
+                    href={decision.explorerUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={decision.txHash}
+                    className="font-mono text-amber-400 hover:text-amber-300 shrink-0"
+                  >
+                    {`${decision.txHash?.slice(0, 8)}...${decision.txHash?.slice(-6)}`}
+                    <ExternalLink className="inline w-3 h-3 ml-1" />
+                  </a>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
       {/* ─── MODAL: REAL ON-CHAIN DEPOSIT (SIGNS WITH WALLET) ────────── */}
       {isDepositModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
@@ -1026,7 +1251,8 @@ export default function LivePancakeSwapCard({
               <span className="text-amber-300 font-semibold">
                 Momentum 24 Jam
               </span>
-              . Nominal swap dihitung dari saldo tBNB/tUSDT agent yang terbaca on-chain, lalu dieksekusi di PancakeSwap sampai Anda menekan Stop.
+              . Nominal swap dihitung dari saldo tBNB/tUSDT agent yang terbaca
+              on-chain, lalu dieksekusi di PancakeSwap sampai Anda menekan Stop.
             </p>
 
             {/* Balance Info */}
@@ -1076,7 +1302,9 @@ export default function LivePancakeSwapCard({
                 className="flex-1 py-2.5 text-xs font-bold text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 rounded-xl transition-all shadow-md shadow-amber-500/20 flex items-center justify-center gap-1.5"
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
-                Mulai AI Agent Berkelanjutan
+                {isAutoPaused
+                  ? "Lanjutkan AI Agent"
+                  : "Mulai AI Agent Berkelanjutan"}
               </button>
             </div>
           </div>

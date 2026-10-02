@@ -6,8 +6,10 @@ import ConnectWallet from "@/components/layout/connect-wallet";
 import QuantStat from "@/components/ui/quant-stat";
 import {
   getTransactions,
+  getPaperPredictions,
   createTransaction,
   deleteTransaction,
+  type PaperPrediction,
   type Transaction,
 } from "@/lib/api";
 import {
@@ -51,12 +53,20 @@ export default function FinancePage() {
   const targetWallet = address ? address.toLowerCase() : "";
 
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [filterType, setFilterType] = useState<"all" | "trades" | "deposit" | "withdrawal">("all");
+  const [paperPredictions, setPaperPredictions] = useState<PaperPrediction[]>(
+    [],
+  );
+  const [paperError, setPaperError] = useState<string | null>(null);
+  const [filterType, setFilterType] = useState<
+    "all" | "trades" | "deposit" | "withdrawal"
+  >("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [supabaseConnected, setSupabaseConnected] = useState<boolean | null>(null);
+  const [supabaseConnected, setSupabaseConnected] = useState<boolean | null>(
+    null,
+  );
 
   const [newTx, setNewTx] = useState({
     category: "Trade Profit",
@@ -70,6 +80,8 @@ export default function FinancePage() {
   const fetchLedger = async (showLoading = true) => {
     if (!targetWallet) {
       setTransactions([]);
+      setPaperPredictions([]);
+      setPaperError(null);
       setIsLoading(false);
       setIsRefreshing(false);
       setSupabaseConnected(true);
@@ -78,14 +90,28 @@ export default function FinancePage() {
     if (showLoading) setIsLoading(true);
     setIsRefreshing(true);
     try {
-      const res = await getTransactions(targetWallet, 100);
+      let predictionFetchFailed = false;
+      const [res, paperResult] = await Promise.all([
+        getTransactions(targetWallet, 100),
+        getPaperPredictions(targetWallet, 100).catch((error) => {
+          predictionFetchFailed = true;
+          console.error("Could not fetch paper predictions:", error);
+          return { predictions: [] as PaperPrediction[] };
+        }),
+      ]);
       setSupabaseConnected(true);
+      setPaperPredictions(paperResult.predictions);
+      setPaperError(
+        predictionFetchFailed
+          ? "Jalankan backend/migrations/paper-trading.sql di Supabase untuk mengaktifkan evaluasi model."
+          : null,
+      );
       if (res.transactions) {
         setTransactions(
           res.transactions.map((t) => ({
             ...t,
-            hash: t.tx_hash || "0x" + (t.id.slice(0, 4) + "..." + t.id.slice(-4)),
-          }))
+            hash: t.tx_hash || "",
+          })),
         );
       } else {
         setTransactions([]);
@@ -94,6 +120,7 @@ export default function FinancePage() {
       console.error("Could not fetch Supabase transactions:", err);
       setSupabaseConnected(false);
       setTransactions([]);
+      setPaperPredictions([]);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -114,25 +141,55 @@ export default function FinancePage() {
     .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
   const totalProfits = transactions
-    .filter((t) => t.category === "Trade Profit" || t.category === "Staking Yield")
+    .filter(
+      (t) => t.category === "Trade Profit" || t.category === "Staking Yield",
+    )
     .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
   const totalLosses = transactions
     .filter((t) => t.category === "Trade Loss" || t.category === "Trading Fee")
     .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+  const settledPaper = paperPredictions.filter(
+    (prediction) => prediction.settled_at,
+  );
+  const settledPaperTrades = settledPaper.filter(
+    (prediction) => prediction.action !== "HOLD",
+  );
+  const paperNetPnl = settledPaperTrades.reduce(
+    (sum, prediction) => sum + (Number(prediction.simulated_pnl_usdt) || 0),
+    0,
+  );
+  const paperTradeAccuracy = settledPaperTrades.length
+    ? (settledPaperTrades.filter((prediction) => prediction.direction_correct)
+        .length /
+        settledPaperTrades.length) *
+      100
+    : null;
+  const paperTradeCoverage = settledPaper.length
+    ? (settledPaperTrades.length / settledPaper.length) * 100
+    : null;
 
   const netPnL = totalProfits - totalLosses;
-  const activeBalance = (totalDeposit - totalWithdrawal) + netPnL;
+  const activeBalance = totalDeposit - totalWithdrawal + netPnL;
 
-  const winCount = transactions.filter((t) => t.category === "Trade Profit").length;
-  const lossCount = transactions.filter((t) => t.category === "Trade Loss").length;
+  const winCount = transactions.filter(
+    (t) => t.category === "Trade Profit",
+  ).length;
+  const lossCount = transactions.filter(
+    (t) => t.category === "Trade Loss",
+  ).length;
   const totalTrades = winCount + lossCount;
-  const winRate = totalTrades > 0 ? ((winCount / totalTrades) * 100).toFixed(1) : "0.0";
+  const winRate =
+    totalTrades > 0 ? ((winCount / totalTrades) * 100).toFixed(1) : "0.0";
 
   const handleAdd = async () => {
     if (!newTx.amount || !newTx.category) return;
-    const randomHex = "0x" + Math.random().toString(16).slice(2, 6) + "..." + Math.random().toString(16).slice(2, 6);
-    
+    const randomHex =
+      "0x" +
+      Math.random().toString(16).slice(2, 6) +
+      "..." +
+      Math.random().toString(16).slice(2, 6);
+
     // Automatically set is_income based on trading category
     const isIncome =
       newTx.category === "Trade Profit" ||
@@ -173,8 +230,8 @@ export default function FinancePage() {
             prev.map((t) =>
               t.id === optimisticTx.id
                 ? { ...res.transaction, hash: randomHex }
-                : t
-            )
+                : t,
+            ),
           );
         }
       } catch (err) {
@@ -205,7 +262,8 @@ export default function FinancePage() {
   const filteredTransactions = transactions.filter((tx) => {
     let matchesFilter = true;
     if (filterType === "trades") {
-      matchesFilter = tx.category === "Trade Profit" || tx.category === "Trade Loss";
+      matchesFilter =
+        tx.category === "Trade Profit" || tx.category === "Trade Loss";
     } else if (filterType === "deposit") {
       matchesFilter = tx.category === "Deposit";
     } else if (filterType === "withdrawal") {
@@ -236,13 +294,17 @@ export default function FinancePage() {
                 supabaseConnected
                   ? "bg-[#26A17B]/15 text-[#00D492] border-[#26A17B]/30"
                   : supabaseConnected === false
-                  ? "bg-rose-500/15 text-rose-400 border-rose-500/30"
-                  : "bg-white/5 text-gray-400 border-white/10"
+                    ? "bg-rose-500/15 text-rose-400 border-rose-500/30"
+                    : "bg-white/5 text-gray-400 border-white/10"
               }`}
             >
               <Database className="w-3 h-3" />
-              <span className={`w-1.5 h-1.5 rounded-full ${supabaseConnected ? "bg-[#00D492] animate-pulse" : "bg-gray-500"}`} />
-              {supabaseConnected ? t("supabaseConnectedRecords", { count: transactions.length }) : t("connectingSupabase")}
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${supabaseConnected ? "bg-[#00D492] animate-pulse" : "bg-gray-500"}`}
+              />
+              {supabaseConnected
+                ? t("supabaseConnectedRecords", { count: transactions.length })
+                : t("connectingSupabase")}
             </span>
 
             <button
@@ -251,7 +313,9 @@ export default function FinancePage() {
               className="p-1 px-1.5 rounded-md text-gray-400 hover:text-white hover:bg-white/5 transition-all text-[11px] font-mono flex items-center gap-1 border border-white/5"
               title={t("sync")}
             >
-              <RefreshCw className={`w-3 h-3 ${isRefreshing ? "animate-spin text-[#00D492]" : ""}`} />
+              <RefreshCw
+                className={`w-3 h-3 ${isRefreshing ? "animate-spin text-[#00D492]" : ""}`}
+              />
               <span>{t("sync")}</span>
             </button>
           </div>
@@ -320,7 +384,9 @@ export default function FinancePage() {
         {/* Table Controls / Filters */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
           <div className="flex items-center gap-2">
-            <h2 className="text-base sm:text-lg font-bold text-white">{t("journalHistory")}</h2>
+            <h2 className="text-base sm:text-lg font-bold text-white">
+              {t("journalHistory")}
+            </h2>
             <span className="text-xs font-mono text-gray-500 bg-white/[0.04] px-2 py-0.5 rounded-full">
               {filteredTransactions.length} entries
             </span>
@@ -395,7 +461,9 @@ export default function FinancePage() {
                 <th className="pb-3">{t("categoryLabel")}</th>
                 <th className="pb-3">{t("colProofHash")}</th>
                 <th className="pb-3 text-right">{t("colAmount")}</th>
-                <th className="pb-3 text-right pr-4 sm:pr-2">{t("colActions")}</th>
+                <th className="pb-3 text-right pr-4 sm:pr-2">
+                  {t("colActions")}
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/[0.03]">
@@ -405,7 +473,9 @@ export default function FinancePage() {
                     <div className="flex flex-col items-center justify-center text-gray-500 gap-3">
                       <RefreshCw className="w-6 h-6 animate-spin text-[#00D492]" />
                       <span className="text-xs font-mono text-gray-400">
-                        {language === "id" ? "Menyinkronkan transaksi dengan database Supabase..." : "Synchronizing records with Supabase database..."}
+                        {language === "id"
+                          ? "Menyinkronkan transaksi dengan database Supabase..."
+                          : "Synchronizing records with Supabase database..."}
                       </span>
                     </div>
                   </td>
@@ -426,132 +496,351 @@ export default function FinancePage() {
                 </tr>
               ) : (
                 filteredTransactions.map((tx) => {
-                const isGain = tx.category === "Trade Profit" || tx.category === "Staking Yield";
-                const isLoss = tx.category === "Trade Loss";
-                const isDep = tx.category === "Deposit";
-                const isWd = tx.category === "Withdrawal";
+                  const isGain =
+                    tx.category === "Trade Profit" ||
+                    tx.category === "Staking Yield";
+                  const isLoss = tx.category === "Trade Loss";
+                  const isDep = tx.category === "Deposit";
+                  const isWd = tx.category === "Withdrawal";
+                  const isLiveTrade = tx.category === "Live Trade";
 
-                const categoryDisplay = 
-                  tx.category === "Trade Profit" ? t("tradeProfitCategory") :
-                  tx.category === "Trade Loss" ? t("tradeLossCategory") :
-                  tx.category === "Deposit" ? t("depositCategory") :
-                  tx.category === "Withdrawal" ? t("withdrawalCategory") :
-                  tx.category === "Trading Fee" ? t("tradingFeeCategory") :
-                  tx.category === "Staking Yield" ? t("stakingYieldCategory") :
-                  tx.category;
+                  const categoryDisplay =
+                    tx.category === "Trade Profit"
+                      ? t("tradeProfitCategory")
+                      : tx.category === "Trade Loss"
+                        ? t("tradeLossCategory")
+                        : tx.category === "Deposit"
+                          ? t("depositCategory")
+                          : tx.category === "Withdrawal"
+                            ? t("withdrawalCategory")
+                            : tx.category === "Trading Fee"
+                              ? t("tradingFeeCategory")
+                              : tx.category === "Staking Yield"
+                                ? t("stakingYieldCategory")
+                                : tx.category;
 
-                return (
-                  <tr
-                    key={tx.id}
-                    className="hover:bg-white/[0.02] transition-colors group"
-                  >
-                    {/* Type & Note */}
-                    <td className="py-4 pl-4 sm:pl-2">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
+                  const cleanNote = String(tx.note || "")
+                    .replace(/^\[PancakeSwap On-Chain\]\s*/, "")
+                    .replace(/\s*[—-]\s*Ditukar\s*/, " · ")
+                    .replace(/\s*\.\s*Reasoning:[\s\S]*$/, "")
+                    .replace(/\s+menjadi\s+/, " → ")
+                    .replace(/\bBNBUSDT\b/g, "BNB/USDT");
+                  const hasValidTxHash = /^0x[a-fA-F0-9]{64}$/.test(tx.hash);
+                  const explorerBase = String(tx.pair || "").startsWith("t")
+                    ? "https://testnet.bscscan.com"
+                    : "https://bscscan.com";
+
+                  return (
+                    <tr
+                      key={tx.id}
+                      className="hover:bg-white/[0.02] transition-colors group"
+                    >
+                      {/* Type & Note */}
+                      <td className="py-4 pl-4 sm:pl-2">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
+                              isGain
+                                ? "bg-[#00D492]/10 border-[#00D492]/30 text-[#00D492]"
+                                : isLoss
+                                  ? "bg-rose-500/10 border-rose-500/30 text-rose-400"
+                                  : isDep
+                                    ? "bg-blue-500/10 border-blue-500/30 text-blue-400"
+                                    : "bg-amber-500/10 border-amber-500/30 text-amber-400"
+                            }`}
+                          >
+                            {isGain && (
+                              <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
+                            )}
+                            {isLoss && (
+                              <ArrowDownRight className="w-4 h-4 stroke-[2.5]" />
+                            )}
+                            {isDep && (
+                              <ArrowDownLeft className="w-4 h-4 stroke-[2.5]" />
+                            )}
+                            {isWd && (
+                              <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
+                            )}
+                            {!isGain && !isLoss && !isDep && !isWd && (
+                              <Coins className="w-4 h-4" />
+                            )}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-sm text-white">
+                              {cleanNote}
+                            </div>
+                            <div className="text-[11px] font-mono text-gray-500 flex items-center gap-1.5 mt-0.5">
+                              <Clock className="w-3 h-3" />
+                              {new Date(tx.created_at).toLocaleDateString(
+                                language === "id" ? "id-ID" : "en-US",
+                                {
+                                  day: "numeric",
+                                  month: "short",
+                                  year: "numeric",
+                                },
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Pair */}
+                      <td className="py-4">
+                        <span className="font-mono text-xs text-[#00D492] font-semibold bg-[#26A17B]/10 px-2 py-0.5 rounded border border-[#26A17B]/20">
+                          {tx.pair || "BNB/USDT"}
+                        </span>
+                      </td>
+
+                      {/* Category Badge */}
+                      <td className="py-4">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono border ${
                             isGain
-                              ? "bg-[#00D492]/10 border-[#00D492]/30 text-[#00D492]"
+                              ? "bg-[#00D492]/10 text-[#00D492] border-[#00D492]/30"
                               : isLoss
-                              ? "bg-rose-500/10 border-rose-500/30 text-rose-400"
-                              : isDep
-                              ? "bg-blue-500/10 border-blue-500/30 text-blue-400"
-                              : "bg-amber-500/10 border-amber-500/30 text-amber-400"
+                                ? "bg-rose-500/10 text-rose-400 border-rose-500/30"
+                                : isDep
+                                  ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
+                                  : "bg-amber-500/10 text-amber-400 border-amber-500/30"
                           }`}
                         >
-                          {isGain && <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />}
-                          {isLoss && <ArrowDownRight className="w-4 h-4 stroke-[2.5]" />}
-                          {isDep && <ArrowDownLeft className="w-4 h-4 stroke-[2.5]" />}
-                          {isWd && <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />}
-                          {!isGain && !isLoss && !isDep && !isWd && (
-                            <Coins className="w-4 h-4" />
-                          )}
+                          {categoryDisplay}
+                        </span>
+                      </td>
+
+                      {/* BSC On-Chain Proof */}
+                      <td className="py-4">
+                        {hasValidTxHash ? (
+                          <a
+                            href={`${explorerBase}/tx/${tx.hash}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={tx.hash}
+                            className="inline-flex items-center gap-1.5 font-mono text-xs text-gray-400 hover:text-[#00D492] transition-colors"
+                          >
+                            <span>{`${tx.hash.slice(0, 10)}...${tx.hash.slice(-8)}`}</span>
+                            <ExternalLink className="w-3 h-3 text-gray-500 group-hover:text-[#00D492]" />
+                          </a>
+                        ) : (
+                          <span className="font-mono text-xs text-gray-600">
+                            —
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Amount */}
+                      <td className="py-4 text-right">
+                        <div
+                          className={`font-mono font-bold text-sm md:text-base ${
+                            isGain || isDep
+                              ? "text-[#00D492]"
+                              : isLiveTrade
+                                ? "text-gray-300"
+                                : "text-rose-400"
+                          }`}
+                        >
+                          {isLiveTrade ? "" : isGain || isDep ? "+" : "-"}$
+                          {tx.amount.toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
                         </div>
-                        <div>
-                          <div className="font-semibold text-sm text-white">
-                            {tx.note}
-                          </div>
-                          <div className="text-[11px] font-mono text-gray-500 flex items-center gap-1.5 mt-0.5">
-                            <Clock className="w-3 h-3" />
-                            {new Date(tx.created_at).toLocaleDateString(language === "id" ? "id-ID" : "en-US", {
-                              day: "numeric",
-                              month: "short",
-                              year: "numeric",
-                            })}
-                          </div>
+                        <div className="text-[10px] font-mono text-gray-500">
+                          {isLiveTrade
+                            ? language === "id"
+                              ? "Swap on-chain · bukan PnL"
+                              : "On-chain swap · not PnL"
+                            : tx.category === "Deposit"
+                              ? language === "id"
+                                ? "Modal Masuk"
+                                : "Capital In"
+                              : tx.category === "Withdrawal"
+                                ? language === "id"
+                                  ? "Modal Keluar"
+                                  : "Capital Out"
+                                : categoryDisplay}
                         </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    {/* Pair */}
-                    <td className="py-4">
-                      <span className="font-mono text-xs text-[#00D492] font-semibold bg-[#26A17B]/10 px-2 py-0.5 rounded border border-[#26A17B]/20">
-                        {tx.pair || "BNB/USDT"}
-                      </span>
-                    </td>
-
-                    {/* Category Badge */}
-                    <td className="py-4">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono border ${
-                          isGain
-                            ? "bg-[#00D492]/10 text-[#00D492] border-[#00D492]/30"
-                            : isLoss
-                            ? "bg-rose-500/10 text-rose-400 border-rose-500/30"
-                            : isDep
-                            ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
-                            : "bg-amber-500/10 text-amber-400 border-amber-500/30"
-                        }`}
-                      >
-                        {categoryDisplay}
-                      </span>
-                    </td>
-
-                    {/* BSC On-Chain Proof */}
-                    <td className="py-4">
-                      <a
-                        href="https://testnet.bscscan.com"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1.5 font-mono text-xs text-gray-400 hover:text-[#00D492] transition-colors"
-                      >
-                        <span>{tx.hash}</span>
-                        <ExternalLink className="w-3 h-3 text-gray-500 group-hover:text-[#00D492]" />
-                      </a>
-                    </td>
-
-                    {/* Amount */}
-                    <td className="py-4 text-right">
-                      <div
-                        className={`font-mono font-bold text-sm md:text-base ${
-                          isGain || isDep ? "text-[#00D492]" : "text-rose-400"
-                        }`}
-                      >
-                        {isGain || isDep ? "+" : "-"}${tx.amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </div>
-                      <div className="text-[10px] font-mono text-gray-500">
-                        {tx.category === "Deposit" ? (language === "id" ? "Modal Masuk" : "Capital In") : tx.category === "Withdrawal" ? (language === "id" ? "Modal Keluar" : "Capital Out") : categoryDisplay}
-                      </div>
-                    </td>
-
-                    {/* Delete Action */}
-                    <td className="py-4 text-right pr-4 sm:pr-2">
-                      <button
-                        onClick={() => handleDelete(tx.id)}
-                        className="p-1.5 rounded-lg text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 opacity-40 group-hover:opacity-100 transition-all"
-                        title={t("delete")}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
+                      {/* Delete Action */}
+                      <td className="py-4 text-right pr-4 sm:pr-2">
+                        <button
+                          onClick={() => handleDelete(tx.id)}
+                          className="p-1.5 rounded-lg text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 opacity-40 group-hover:opacity-100 transition-all"
+                          title={t("delete")}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
       </div>
+
+      <section className="glass-card p-4 sm:p-6 border border-[#1E2738]">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-base sm:text-lg font-bold text-white">
+              Evaluasi Model · Paper Trading
+            </h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Prediksi BNB/USDT dibandingkan dengan harga Binance setelah 24
+              jam; tidak ada dana on-chain yang dihitung.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-4 text-xs font-mono">
+            <span className="text-gray-400">
+              Selesai <b className="text-white">{settledPaper.length}</b>
+            </span>
+            <span className="text-gray-400">
+              Akurasi semua{" "}
+              <b className="text-white">
+                {settledPaper.length
+                  ? `${((settledPaper.filter((prediction) => prediction.direction_correct).length / settledPaper.length) * 100).toFixed(1)}%`
+                  : "—"}
+              </b>
+            </span>
+            <span className="text-gray-400">
+              Trade{" "}
+              <b className="text-white">
+                {paperTradeCoverage !== null
+                  ? `${settledPaperTrades.length} (${paperTradeCoverage.toFixed(1)}%)`
+                  : "—"}
+              </b>
+            </span>
+            <span className="text-gray-400">
+              Akurasi trade{" "}
+              <b className="text-white">
+                {paperTradeAccuracy !== null
+                  ? `${paperTradeAccuracy.toFixed(1)}%`
+                  : "—"}
+              </b>
+            </span>
+            <span className="text-gray-400">
+              PnL simulasi{" "}
+              <b
+                className={
+                  paperNetPnl >= 0 ? "text-emerald-400" : "text-rose-400"
+                }
+              >
+                {paperNetPnl >= 0 ? "+" : ""}${paperNetPnl.toFixed(2)}
+              </b>
+            </span>
+          </div>
+        </div>
+        {paperError && (
+          <p className="text-xs text-amber-400 mb-3">{paperError}</p>
+        )}
+        {paperPredictions.length === 0 ? (
+          <p className="py-6 text-center text-xs text-gray-500">
+            Belum ada prediksi tersimpan.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1300px] text-left">
+              <thead>
+                <tr className="border-b border-white/5 text-[10px] font-mono uppercase text-gray-500">
+                  <th className="py-2">Waktu</th>
+                  <th>Prediksi</th>
+                  <th>Peluang model</th>
+                  <th>Skor faktor model</th>
+                  <th>MC naik 24h</th>
+                  <th>5m Δ</th>
+                  <th>Fear & Greed</th>
+                  <th>BNB/USDT</th>
+                  <th>Hasil</th>
+                  <th className="text-right">PnL simulasi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/[0.03]">
+                {paperPredictions.map((prediction) => {
+                  const pending = !prediction.settled_at;
+                  const pnl = Number(prediction.simulated_pnl_usdt) || 0;
+                  const result = pending
+                    ? "Pending"
+                    : prediction.action === "HOLD"
+                      ? prediction.direction_correct
+                        ? "HOLD tepat"
+                        : "HOLD meleset"
+                      : prediction.direction_correct
+                        ? "Arah tepat"
+                        : "Arah meleset";
+                  return (
+                    <tr key={prediction.id} className="text-xs">
+                      <td className="py-3 font-mono text-gray-400">
+                        {new Date(prediction.predicted_at).toLocaleString(
+                          language === "id" ? "id-ID" : "en-US",
+                        )}
+                      </td>
+                      <td
+                        className={`font-bold ${prediction.action === "BUY" ? "text-emerald-400" : prediction.action === "SELL" ? "text-rose-400" : "text-gray-300"}`}
+                      >
+                        {prediction.action}{" "}
+                        <span className="font-normal text-gray-500">
+                          · {Number(prediction.confidence).toFixed(1)}%
+                        </span>
+                      </td>
+                      <td>
+                        {Number(prediction.gemini_up_probability).toFixed(1)}%
+                      </td>
+                      <td className="font-mono text-[10px] text-gray-400 whitespace-nowrap">
+                        {prediction.gemini_factor_scores?.momentum_5m !==
+                        undefined
+                          ? `5m ${prediction.gemini_factor_scores.momentum_5m.toFixed(2)} · RSI ${prediction.gemini_factor_scores.rsi?.toFixed(2) ?? "—"} · Vol ${prediction.gemini_factor_scores.volume?.toFixed(2) ?? "—"} · F&G ${prediction.gemini_factor_scores.sentiment?.toFixed(2) ?? "—"} · MC ${prediction.gemini_factor_scores.monte_carlo_24h?.toFixed(2) ?? "—"}`
+                          : "Skor historis tidak tersedia"}
+                      </td>
+                      <td>
+                        {(
+                          Number(prediction.monte_carlo_probability_up) * 100
+                        ).toFixed(1)}
+                        %
+                      </td>
+                      <td>{Number(prediction.change_5m_pct).toFixed(3)}%</td>
+                      <td>
+                        {prediction.fear_greed_index === null
+                          ? "—"
+                          : `${prediction.fear_greed_index} · ${prediction.fear_greed_label || ""}`}
+                      </td>
+                      <td className="font-mono text-gray-400">
+                        ${Number(prediction.entry_price).toFixed(2)}
+                        {prediction.settlement_price !== null &&
+                          ` → $${Number(prediction.settlement_price).toFixed(2)}`}
+                      </td>
+                      <td
+                        className={
+                          pending
+                            ? "text-amber-400"
+                            : prediction.direction_correct
+                              ? "text-emerald-400"
+                              : "text-rose-400"
+                        }
+                      >
+                        {result}
+                      </td>
+                      <td
+                        className={`text-right font-mono ${pending ? "text-gray-500" : pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+                      >
+                        {pending
+                          ? "—"
+                          : `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="text-[10px] text-gray-600 mt-3">
+          Evaluasi independen memakai eksposur 1 BNB per sinyal (dinilai dalam
+          USDT saat prediksi) dan biaya round-trip 0,2%. Akumulasi PnL per
+          sinyal bukan saldo portfolio atau transaksi on-chain.
+        </p>
+      </section>
 
       {/* Add Trade/Capital Dialog */}
       {showAddModal && (
@@ -559,9 +848,13 @@ export default function FinancePage() {
           <div className="glass-card p-6 md:p-8 w-full max-w-md border border-[#26A17B]/30 shadow-2xl shadow-black/80 animate-slide-up">
             <div className="flex items-center justify-between mb-6 pb-4 border-b border-white/5">
               <div>
-                <h3 className="text-xl font-bold text-white">{t("addNewRecordTitle")}</h3>
+                <h3 className="text-xl font-bold text-white">
+                  {t("addNewRecordTitle")}
+                </h3>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  {language === "id" ? "Catat deposit, penarikan, atau PnL trading ke jurnal BSC Anda." : "Append deposit, withdrawal, or trade PnL to your BSC journal."}
+                  {language === "id"
+                    ? "Catat deposit, penarikan, atau PnL trading ke jurnal BSC Anda."
+                    : "Append deposit, withdrawal, or trade PnL to your BSC journal."}
                 </p>
               </div>
               <button
@@ -590,14 +883,23 @@ export default function FinancePage() {
                     }`}
                   >
                     <span>
-                      {cat === "Trade Profit" ? t("tradeProfitCategory") :
-                       cat === "Trade Loss" ? t("tradeLossCategory") :
-                       cat === "Deposit" ? t("depositCategory") :
-                       cat === "Withdrawal" ? t("withdrawalCategory") :
-                       cat === "Trading Fee" ? t("tradingFeeCategory") :
-                       cat === "Staking Yield" ? t("stakingYieldCategory") : cat}
+                      {cat === "Trade Profit"
+                        ? t("tradeProfitCategory")
+                        : cat === "Trade Loss"
+                          ? t("tradeLossCategory")
+                          : cat === "Deposit"
+                            ? t("depositCategory")
+                            : cat === "Withdrawal"
+                              ? t("withdrawalCategory")
+                              : cat === "Trading Fee"
+                                ? t("tradingFeeCategory")
+                                : cat === "Staking Yield"
+                                  ? t("stakingYieldCategory")
+                                  : cat}
                     </span>
-                    {newTx.category === cat && <CheckCircle2 className="w-3.5 h-3.5" />}
+                    {newTx.category === cat && (
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    )}
                   </button>
                 ))}
               </div>
@@ -634,7 +936,9 @@ export default function FinancePage() {
                     type="number"
                     step="any"
                     value={newTx.amount}
-                    onChange={(e) => setNewTx({ ...newTx, amount: e.target.value })}
+                    onChange={(e) =>
+                      setNewTx({ ...newTx, amount: e.target.value })
+                    }
                     placeholder="250.00"
                     className="w-full pl-8 pr-3 py-2 bg-[#080B11] border border-[#1E2738] rounded-xl text-white font-mono text-xs placeholder-gray-600 focus:outline-none focus:border-[#26A17B]/60 transition-all"
                   />

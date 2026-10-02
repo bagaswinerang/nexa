@@ -32,20 +32,30 @@ const MonteCarloChart = dynamic(
   },
 );
 
+import type { QuantHorizon } from "@/lib/api";
+
 const POPULAR_PAIRS = [
   { symbol: "BNBUSDT", label: "BNB/USDT" },
 ];
 
-const DAYS_OPTIONS = [1, 7, 14, 30, 60, 90];
+const HORIZON_OPTIONS: { value: QuantHorizon; label: string }[] = [
+  { value: "1h", label: "1h" },
+  { value: "2h", label: "2h" },
+  { value: "4h", label: "4h" },
+  { value: "6h", label: "6h" },
+  { value: "8h", label: "8h" },
+  { value: "12h", label: "12h" },
+  { value: "24h", label: "24h" },
+];
 
 export default function QuantPage() {
   const { t, language } = useLanguage();
   const symbol = "BNBUSDT";
-  const [days, setDays] = useState(30);
+  const [horizon, setHorizon] = useState<QuantHorizon>("24h");
   const { result, isLoading, error, simulate } = useMonteCarlo();
 
   const handleSimulate = () => {
-    simulate(symbol, days);
+    simulate(symbol, horizon);
   };
 
   return (
@@ -105,23 +115,23 @@ export default function QuantPage() {
             </div>
           </div>
 
-          {/* Days Select */}
+          {/* Horizon Select */}
           <div>
             <label className="text-xs font-mono uppercase text-gray-400 mb-2.5 block">
-              {t("forecastHorizon")}
+              {t("forecastHorizon")} (Intraday)
             </label>
             <div className="flex flex-wrap gap-2">
-              {DAYS_OPTIONS.map((d) => (
+              {HORIZON_OPTIONS.map((h) => (
                 <button
-                  key={d}
-                  onClick={() => setDays(d)}
+                  key={h.value}
+                  onClick={() => setHorizon(h.value)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-mono font-medium transition-all ${
-                    days === d
+                    horizon === h.value
                       ? "bg-[#00D492]/20 text-[#00D492] font-semibold border border-[#00D492]/40"
                       : "bg-[#080B11] border border-[#1E2738] text-gray-400 hover:text-white"
                   }`}
                 >
-                  {d === 1 ? "24 Jam" : t("daysUnit", { days: d })}
+                  {h.label}
                 </button>
               ))}
             </div>
@@ -184,7 +194,7 @@ export default function QuantPage() {
                 100
               ).toFixed(2)}% ${t("expected")}`}
               isPositive={result.mean_price >= result.current_price}
-              sublabel={`Horizon ${result.days_simulated}d`}
+              sublabel={`Horizon ${result.period_label || result.horizon}`}
               icon={<Target className="w-4 h-4" />}
               tag={t("expected")}
             />
