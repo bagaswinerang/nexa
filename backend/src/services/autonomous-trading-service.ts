@@ -10,7 +10,6 @@ import {
 import { MARKET_DECISION_FACTORS } from "../config/trading-rules.js";
 import { TradingForecastUnavailableError } from "./trading-forecast.js";
 
-const AUTO_TRADE_INTERVAL_MS = MARKET_DECISION_FACTORS.ALPHA.COOLDOWN_MS;
 const AUTO_TRADE_COOLDOWN_MS = MARKET_DECISION_FACTORS.ALPHA.COOLDOWN_MS;
 
 type AutoTradeOptions = { userAddress: string; symbol: string };
@@ -31,6 +30,7 @@ export type AutoTradeStatus = {
   is_analyzing: boolean;
   user_address: string;
   symbol: string;
+  /** Always 0: analysis never runs on a background interval. */
   interval_ms: number;
   started_at?: string;
   last_cycle_at?: string;
@@ -58,14 +58,6 @@ const sessions = new Map<string, AutoTradeSession>();
 function sessionKey(userAddress: string) {
   return userAddress.toLowerCase();
 }
-function scheduleNextCycle(session: AutoTradeSession) {
-  if (session.status.active)
-    session.timer = setTimeout(
-      () => void runCycle(session),
-      AUTO_TRADE_INTERVAL_MS,
-    );
-}
-
 async function runCycle(session: AutoTradeSession) {
   if (!session.status.active) return;
   session.status.last_cycle_at = new Date().toISOString();
@@ -171,7 +163,9 @@ async function runCycle(session: AutoTradeSession) {
     console.error(`[AutonomousTrading] ${session.status.last_error}`);
   } finally {
     session.status.is_analyzing = false;
-    scheduleNextCycle(session);
+    // Gemini analysis is user-triggered and one-shot. A new request is made
+    // only when the user presses the Start button again.
+    session.status.active = false;
   }
 }
 
@@ -188,6 +182,7 @@ export function startAutonomousTrading(
       existing.status.paused = false;
       existing.status.pause_reason = undefined;
       existing.status.last_error = undefined;
+      existing.status.started_at = new Date().toISOString();
       void runCycle(existing);
     }
     return existing.status;
@@ -200,7 +195,7 @@ export function startAutonomousTrading(
       is_analyzing: false,
       user_address: options.userAddress,
       symbol: options.symbol,
-      interval_ms: AUTO_TRADE_INTERVAL_MS,
+      interval_ms: 0,
       started_at: new Date().toISOString(),
       recent_decisions: [],
     },
@@ -234,7 +229,7 @@ export function getAutonomousTradingStatus(
       is_analyzing: false,
       user_address: userAddress,
       symbol: "BNBUSDT",
-      interval_ms: AUTO_TRADE_INTERVAL_MS,
+      interval_ms: 0,
       recent_decisions: [],
     }
   );

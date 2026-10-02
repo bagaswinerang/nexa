@@ -26,8 +26,14 @@ export const env = {
   SUPABASE_URL: requireEnv("SUPABASE_URL"),
   SUPABASE_ANON_KEY: requireEnv("SUPABASE_ANON_KEY"),
 
-  // Python Engine
-  PYTHON_ENGINE_URL: optionalEnv("PYTHON_ENGINE_URL", "http://localhost:3002"),
+  // Python Engine. Local development talks to the local engine by default;
+  // production may provide an explicit Railway URL through PYTHON_ENGINE_URL.
+  PYTHON_ENGINE_URL: optionalEnv(
+    "PYTHON_ENGINE_URL",
+    process.env.NODE_ENV === "production"
+      ? "https://engine-production-58ab.up.railway.app"
+      : "http://localhost:3002",
+  ),
 
   // Server
   PORT: parseInt(optionalEnv("PORT", "3001"), 10),
