@@ -30,7 +30,10 @@ import { env } from "../lib/env.js";
 import { supabase } from "../lib/supabase.js";
 import { generateEmbedding } from "./embedding.js";
 import { ERC20_ABI, PANCAKE_ROUTER_ABI } from "../lib/abis.js";
-import { GAS_SAFETY_CONFIG, EXECUTION_GUARDRAILS } from "../config/trading-rules.js";
+import {
+  GAS_SAFETY_CONFIG,
+  EXECUTION_GUARDRAILS,
+} from "../config/trading-rules.js";
 
 // ─── Network & Clients Setup ─────────────────────────────────────
 
@@ -203,6 +206,10 @@ export async function getLiveBalances(customWallet?: string) {
 // ─── Swap Execution on PancakeSwap ───────────────────────────────
 
 export interface LiveTradeRequest {
+  /**
+   * Portfolio convention: BUY acquires USDT with BNB; SELL returns USDT to BNB.
+   * `amountUsdt` is the requested USDT value of the swap in either direction.
+   */
   action: "BUY" | "SELL";
   amountUsdt: number;
   userAddress: string;
@@ -229,6 +236,11 @@ export interface LiveTradeResponse {
 export async function executeLivePancakeSwap(
   req: LiveTradeRequest,
 ): Promise<LiveTradeResponse> {
+  if (!isTestnet) {
+    throw new Error(
+      "Automated test trading is restricted to BSC Testnet (chain ID 97).",
+    );
+  }
   const account = getAgentAccount();
   if (!account) {
     throw new Error(
@@ -281,14 +293,16 @@ export async function executeLivePancakeSwap(
 
   const nativeName = isTestnet ? "tBNB" : "BNB";
   const stableName = isTestnet ? "tUSDT" : "USDT";
-  const tokenInName = req.action === "BUY" ? stableName : nativeName;
-  const tokenOutName = req.action === "BUY" ? nativeName : stableName;
+  // BNB is the trading capital. BUY means acquire the USDT position with BNB;
+  // SELL means close it back into BNB.
+  const tokenInName = req.action === "BUY" ? nativeName : stableName;
+  const tokenOutName = req.action === "BUY" ? stableName : nativeName;
 
   let txHash: Hash;
   let actualAmountIn = 0;
   let estimatedAmountOut = 0;
 
-  if (req.action === "BUY") {
+  if (req.action === "SELL") {
     const path: Address[] = [usdtAddress, wbnbAddress];
     let amountInWei = parseUnits(requestedUsdt.toFixed(6), usdtDecimals);
 
@@ -300,7 +314,9 @@ export async function executeLivePancakeSwap(
     })) as bigint;
 
     if (usdtBal <= 0n) {
-      throw new Error(`Saldo ${tokenInName} Agent tidak cukup untuk ditradingkan.`);
+      throw new Error(
+        `Saldo ${tokenInName} Agent tidak cukup untuk ditradingkan.`,
+      );
     }
 
     if (usdtBal < amountInWei) {
@@ -344,7 +360,7 @@ export async function executeLivePancakeSwap(
       args: [amountInWei, minOut, path, account.address, deadline],
     });
   } else {
-    // ─── SELL tBNB for tUSDT ───────────────────────────────────────
+    // ─── BUY tUSDT with tBNB ───────────────────────────────────────
     const path: Address[] = [wbnbAddress, usdtAddress];
 
     // Estimate BNB quantity needed from USDT target
@@ -386,7 +402,9 @@ export async function executeLivePancakeSwap(
     }
 
     if (finalAmountInWei <= 0n) {
-      throw new Error(`Saldo ${tokenInName} yang dapat ditradingkan habis setelah cadangan gas ${GAS_SAFETY_CONFIG.TRADE_GAS_RESERVE_BNB} ${tokenInName} disisihkan.`);
+      throw new Error(
+        `Saldo ${tokenInName} yang dapat ditradingkan habis setelah cadangan gas ${GAS_SAFETY_CONFIG.TRADE_GAS_RESERVE_BNB} ${tokenInName} disisihkan.`,
+      );
     }
 
     actualAmountIn = parseFloat(formatEther(finalAmountInWei));
@@ -403,7 +421,7 @@ export async function executeLivePancakeSwap(
     estimatedAmountOut = parseFloat(formatUnits(expectedOut, usdtDecimals));
 
     console.log(
-      `[PancakeSwap] Selling ${actualAmountIn.toFixed(6)} ${tokenInName} for ~${estimatedAmountOut.toFixed(4)} ${tokenOutName}`,
+      `[PancakeSwap] Buying ${tokenOutName}: ${actualAmountIn.toFixed(6)} ${tokenInName} for ~${estimatedAmountOut.toFixed(4)} ${tokenOutName}`,
     );
 
     txHash = await walletClient.writeContract({
@@ -455,15 +473,16 @@ async function recordLiveTradeToSupabase(
   trade: LiveTradeResponse,
 ) {
   try {
-    const isIncome = trade.action === "SELL"; // selling to USDT increases liquid capital
+    const isIncome = false;
     const category = "Live Trade";
-    const note = `[PancakeSwap On-Chain] ${trade.action} ${trade.symbol} — Ditukar ${trade.amountIn.toFixed(4)} ${trade.tokenIn} menjadi ${trade.amountOut.toFixed(4)} ${trade.tokenOut}. Reasoning: ${trade.reasoning || "AI Autonomous Signal"}`;
+    const pair = trade.symbol === "BNBUSDT" ? "BNB/USDT" : trade.symbol;
+    const note = `${trade.action} ${pair} · ${trade.amountIn.toFixed(4)} ${trade.tokenIn} → ${trade.amountOut.toFixed(4)} ${trade.tokenOut}`;
 
-    // ✅ FIX: `amount` is ALWAYS in USDT terms
-    //   BUY  -> amountIn  is tUSDT
-    //   SELL -> amountOut is tUSDT
+    // `amount` is always recorded in USDT terms.
+    //   BUY  -> amountOut is tUSDT (BNB -> USDT)
+    //   SELL -> amountIn  is tUSDT (USDT -> BNB)
     const amountUsdt =
-      trade.action === "BUY" ? trade.amountIn : trade.amountOut;
+      trade.action === "BUY" ? trade.amountOut : trade.amountIn;
 
     let embedding: number[] | null = null;
     try {

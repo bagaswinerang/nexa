@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "rebuild-embeddings": "tsx src/scripts/rebuild-embeddings.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",

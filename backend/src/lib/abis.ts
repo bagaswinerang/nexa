@@ -51,7 +51,7 @@ export const PANCAKE_ROUTER_ABI = [
     ],
     outputs: [{ name: "amounts", type: "uint256[]" }],
   },
-  // USDT -> BNB (BUY)
+  // USDT -> BNB (SELL: closes the USDT position)
   {
     type: "function",
     name: "swapExactTokensForETH",
@@ -65,7 +65,7 @@ export const PANCAKE_ROUTER_ABI = [
     ],
     outputs: [{ name: "amounts", type: "uint256[]" }],
   },
-  // BNB -> USDT (SELL)
+  // BNB -> USDT (BUY: opens the USDT position)
   {
     type: "function",
     name: "swapExactETHForTokens",

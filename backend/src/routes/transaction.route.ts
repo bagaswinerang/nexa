@@ -22,11 +22,15 @@ transactions.get("/", async (c) => {
     .limit(limit);
 
   if (error) {
-    console.error(`[Supabase] ❌ Error fetching transactions: ${error.message}`);
+    console.error(
+      `[Supabase] ❌ Error fetching transactions: ${error.message}`,
+    );
     return c.json({ error: error.message }, 500);
   }
 
-  console.log(`[Supabase] 📥 GET /transactions for ${userAddress} → returned ${data?.length ?? 0} records`);
+  console.log(
+    `[Supabase] 📥 GET /transactions for ${userAddress} → returned ${data?.length ?? 0} records`,
+  );
   return c.json({ transactions: data });
 });
 
@@ -38,14 +42,15 @@ transactions.post("/", async (c) => {
     if (!body.user_address || !body.amount || !body.category) {
       return c.json(
         { error: "user_address, amount, and category are required" },
-        400
+        400,
       );
     }
 
     // Optional vector embedding for semantic search
     let embedding: number[] | null = null;
     try {
-      const textToEmbed = `${body.category} ${body.pair || ""} ${body.note || ""}`.trim();
+      const textToEmbed =
+        `${body.category} ${body.pair || ""} ${body.note || ""}`.trim();
       if (textToEmbed) {
         embedding = await generateEmbedding(textToEmbed);
       }
@@ -69,16 +74,19 @@ transactions.post("/", async (c) => {
       .single();
 
     if (error) {
-      console.error(`[Supabase] ❌ Error inserting transaction: ${error.message}`);
+      console.error(
+        `[Supabase] ❌ Error inserting transaction: ${error.message}`,
+      );
       return c.json({ error: error.message }, 500);
     }
 
     console.log(
-      `[Supabase] 💾 INSERT transaction [${body.category} $${body.amount} USDT (${body.pair || "BNB/USDT"})] for ${body.user_address}`
+      `[Supabase] 💾 INSERT transaction [${body.category} $${body.amount} USDT (${body.pair || "BNB/USDT"})] for ${body.user_address}`,
     );
     return c.json({ transaction: data }, 201);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to create transaction";
+    const message =
+      error instanceof Error ? error.message : "Failed to create transaction";
     console.error(`[Supabase] ❌ Exception creating transaction: ${message}`);
     return c.json({ error: message }, 500);
   }
@@ -88,13 +96,12 @@ transactions.post("/", async (c) => {
 transactions.delete("/:id", async (c) => {
   const id = c.req.param("id");
 
-  const { error } = await supabase
-    .from("transactions")
-    .delete()
-    .eq("id", id);
+  const { error } = await supabase.from("transactions").delete().eq("id", id);
 
   if (error) {
-    console.error(`[Supabase] ❌ Error deleting transaction ${id}: ${error.message}`);
+    console.error(
+      `[Supabase] ❌ Error deleting transaction ${id}: ${error.message}`,
+    );
     return c.json({ error: error.message }, 500);
   }
 
@@ -125,14 +132,25 @@ transactions.get("/summary", async (c) => {
       const amount = Number(tx.amount) || 0;
       const cat = (tx.category || "").toLowerCase();
 
+      if (cat === "live trade") {
+        acc.total_entries++;
+        return acc;
+      }
+
       if (cat === "deposit") {
         acc.total_deposit += amount;
       } else if (cat === "withdrawal") {
         acc.total_withdrawal += amount;
-      } else if (cat === "trade profit" || (tx.is_income && cat !== "deposit")) {
+      } else if (
+        cat === "trade profit" ||
+        (tx.is_income && cat !== "deposit")
+      ) {
         acc.total_profit += amount;
         acc.winning_trades++;
-      } else if (cat === "trade loss" || (!tx.is_income && cat !== "withdrawal")) {
+      } else if (
+        cat === "trade loss" ||
+        (!tx.is_income && cat !== "withdrawal")
+      ) {
         acc.total_loss += amount;
         acc.losing_trades++;
       }
@@ -160,13 +178,17 @@ transactions.get("/summary", async (c) => {
       total_expense: 0,
       total_entries: 0,
       balance: 0,
-    }
+    },
   );
 
   summary.net_pnl = summary.total_profit - summary.total_loss;
-  summary.active_balance = (summary.total_deposit - summary.total_withdrawal) + summary.net_pnl;
+  summary.active_balance =
+    summary.total_deposit - summary.total_withdrawal + summary.net_pnl;
   const totalClosedTrades = summary.winning_trades + summary.losing_trades;
-  summary.win_rate = totalClosedTrades > 0 ? (summary.winning_trades / totalClosedTrades) * 100 : 0;
+  summary.win_rate =
+    totalClosedTrades > 0
+      ? (summary.winning_trades / totalClosedTrades) * 100
+      : 0;
   summary.balance = summary.total_income - summary.total_expense;
 
   return c.json(summary);

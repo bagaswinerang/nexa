@@ -36,7 +36,19 @@ export interface MarketData {
 
 export interface SimulationRequest {
   symbol?: string;
-  horizon?: "24h" | "7d" | "14d" | "30d" | "60d" | "90d";
+  horizon?:
+    | "1h"
+    | "2h"
+    | "4h"
+    | "6h"
+    | "8h"
+    | "12h"
+    | "24h"
+    | "7d"
+    | "14d"
+    | "30d"
+    | "60d"
+    | "90d";
   simulations?: number;
 }
 
@@ -61,6 +73,16 @@ export interface SimulationResponse {
   annual_volatility: number;
   sample_paths: number[][];
   final_prices: number[];
+}
+
+export interface MarketCandle {
+  open_time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  close_time: number;
 }
 
 export interface ChatMessage {

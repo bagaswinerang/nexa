@@ -31,6 +31,7 @@ export const env = {
 
   // Server
   PORT: parseInt(optionalEnv("PORT", "3001"), 10),
+  ALLOWED_ORIGINS: optionalEnv("ALLOWED_ORIGINS", ""),
 
   // Web3 & PancakeSwap (BSC Testnet / Mainnet)
   BSC_RPC_URL: optionalEnv(

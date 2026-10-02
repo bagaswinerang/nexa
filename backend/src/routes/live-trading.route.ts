@@ -20,6 +20,7 @@ import {
   stopAutonomousTrading,
 } from "../services/autonomous-trading-service.js";
 import { generateRecommendation } from "../services/ai-recommend.js";
+import { getPaperPredictions } from "../services/paper-trading-service.js";
 
 const liveTrading = new Hono();
 
@@ -31,21 +32,45 @@ liveTrading.get("/balances", async (c) => {
     const balances = await getLiveBalances(customWallet);
     return c.json(balances);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to fetch balances";
+    const message =
+      error instanceof Error ? error.message : "Failed to fetch balances";
     return c.json({ error: message }, 500);
   }
 });
 
-// Binance BNB/USDT signal with tBNB/tUSDT on-chain sizing.
+// Binance BNB/USDT signal. BNB is capital; BUY opens a USDT position.
 liveTrading.post("/recommend", async (c) => {
   try {
     const body = await c.req.json<{ user_address: string; symbol?: string }>();
-    if (!body.user_address) return c.json({ error: "user_address is required" }, 400);
-    const recommendation = await generateRecommendation(body.user_address, body.symbol || "BNBUSDT");
+    if (!body.user_address)
+      return c.json({ error: "user_address is required" }, 400);
+    const recommendation = await generateRecommendation(
+      body.user_address,
+      body.symbol || "BNBUSDT",
+    );
     return c.json({ recommendation });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Recommendation failed";
+    const message =
+      error instanceof Error ? error.message : "Recommendation failed";
     return c.json({ error: message }, 400);
+  }
+});
+
+liveTrading.get("/paper-trades", async (c) => {
+  const userAddress = c.req.query("user_address");
+  if (!userAddress) return c.json({ error: "user_address is required" }, 400);
+  const parsedLimit = Number.parseInt(c.req.query("limit") || "50", 10);
+  const limit = Number.isFinite(parsedLimit)
+    ? Math.max(1, Math.min(parsedLimit, 100))
+    : 50;
+  try {
+    return c.json({
+      predictions: await getPaperPredictions(userAddress, limit),
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unable to fetch paper trades";
+    return c.json({ error: message }, 500);
   }
 });
 
@@ -65,10 +90,9 @@ liveTrading.post("/execute", async (c) => {
     if (!body.user_address || !body.action || !body.amount_usdt) {
       return c.json(
         { error: "user_address, action, and amount_usdt are required" },
-        400
+        400,
       );
     }
-
 
     const trade = await executeLivePancakeSwap({
       action: body.action,
@@ -81,7 +105,8 @@ liveTrading.post("/execute", async (c) => {
 
     return c.json({ trade }, 201);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Swap execution failed";
+    const message =
+      error instanceof Error ? error.message : "Swap execution failed";
     console.error(`[LiveTrading] ❌ Execute error: ${message}`);
     return c.json({ error: message }, 400);
   }
@@ -106,7 +131,10 @@ liveTrading.post("/auto", async (c) => {
     });
     return c.json({ status }, 202);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to start autonomous trading";
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unable to start autonomous trading";
     console.error(`[LiveTrading] Auto start error: ${message}`);
     return c.json({ error: message }, 400);
   }
@@ -120,8 +148,11 @@ liveTrading.get("/auto/status", (c) => {
 
 liveTrading.post("/auto/stop", async (c) => {
   const body = await c.req.json<{ user_address: string }>();
-  if (!body.user_address) return c.json({ error: "user_address is required" }, 400);
-  const status = stopAutonomousTrading(body.user_address) ?? getAutonomousTradingStatus(body.user_address);
+  if (!body.user_address)
+    return c.json({ error: "user_address is required" }, 400);
+  const status =
+    stopAutonomousTrading(body.user_address) ??
+    getAutonomousTradingStatus(body.user_address);
   return c.json({ status });
 });
 // ─── POST /live-trading/withdraw ─────────────────────────────────
@@ -142,7 +173,7 @@ liveTrading.post("/withdraw", async (c) => {
     if (!body.user_address || !amt || amt <= 0) {
       return c.json(
         { error: "user_address and amount (> 0) are required" },
-        400
+        400,
       );
     }
 
@@ -154,7 +185,8 @@ liveTrading.post("/withdraw", async (c) => {
 
     return c.json({ withdrawal: result });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Withdrawal failed";
+    const message =
+      error instanceof Error ? error.message : "Withdrawal failed";
     console.error(`[LiveTrading] ❌ Withdraw error: ${message}`);
     return c.json({ error: message }, 400);
   }

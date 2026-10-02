@@ -11,7 +11,8 @@ import { env } from "../lib/env.js";
 import { getMarketData } from "./quant-client.js";
 import { getLiveBalances } from "./pancakeswap-service.js";
 import { supabase } from "../lib/supabase.js";
-import { semanticSearchTransactions } from "./embedding.js";
+import { semanticSearchUserHistory } from "./embedding.js";
+import { getPaperPredictions } from "./paper-trading-service.js";
 import { generateRecommendation } from "./ai-recommend.js";
 import type { ChatMessage, MarketData, Transaction } from "../types/index.js";
 
@@ -20,12 +21,14 @@ const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
 const tools: FunctionDeclaration[] = [
   {
     name: "get_market_data",
-    description: "Get live Binance BNB/USDT price, 24-hour change, volume, and Fear & Greed index.",
+    description:
+      "Get live Binance BNB/USDT price, 24-hour change, volume, and Fear & Greed index.",
     parameters: { type: SchemaType.OBJECT, properties: {} },
   },
   {
     name: "get_agent_balances",
-    description: "Get the Nexa agent's real on-chain tBNB and tUSDT balances used for PancakeSwap execution.",
+    description:
+      "Get the Nexa agent's real on-chain tBNB and tUSDT balances used for PancakeSwap execution.",
     parameters: { type: SchemaType.OBJECT, properties: {} },
   },
   {
@@ -34,51 +37,114 @@ const tools: FunctionDeclaration[] = [
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
-        user_address: { type: SchemaType.STRING, description: "User wallet address" },
-        limit: { type: SchemaType.NUMBER, description: "Number of entries (default 20)" },
+        limit: {
+          type: SchemaType.NUMBER,
+          description: "Number of entries (default 20)",
+        },
       },
     },
   },
   {
     name: "search_transactions",
-    description: "Search the user's trading journal by strategy, pair, category, or meaning.",
+    description:
+      "Search the user's trading journal by strategy, pair, category, or meaning.",
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
         query: { type: SchemaType.STRING, description: "Search term" },
-        user_address: { type: SchemaType.STRING, description: "User wallet address" },
-        limit: { type: SchemaType.NUMBER, description: "Maximum results (default 10)" },
+        limit: {
+          type: SchemaType.NUMBER,
+          description: "Maximum results (default 10)",
+        },
       },
       required: ["query"],
     },
   },
   {
-    name: "get_trading_recommendation",
-    description: "Generate a BUY, SELL, or HOLD recommendation from live Binance BNB/USDT momentum and Fear & Greed. Sizing uses real agent tBNB/tUSDT balances.",
+    name: "get_paper_trading_history",
+    description:
+      "Get this wallet's Gemini and 24-hour Monte Carlo forecasts, plus their settled Binance outcomes and simulated PnL.",
     parameters: {
       type: SchemaType.OBJECT,
-      properties: { user_address: { type: SchemaType.STRING, description: "User wallet address" } },
+      properties: {
+        limit: {
+          type: SchemaType.NUMBER,
+          description: "Number of records (default 20)",
+        },
+      },
+    },
+  },
+  {
+    name: "get_trading_recommendation",
+    description:
+      "Generate a guarded BNB/USDT recommendation using Gemini, five-minute Binance movement, daily Fear & Greed, and a 24-hour Monte Carlo forecast. Sizing uses available agent tBNB/tUSDT balances.",
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        user_address: {
+          type: SchemaType.STRING,
+          description: "User wallet address",
+        },
+      },
     },
   },
 ];
 
-async function executeTool(name: string, args: Record<string, unknown>, contextUserAddress?: string): Promise<unknown> {
-  const effectiveAddress = (args.user_address as string) || contextUserAddress || "0x0000000000000000000000000000000000000000";
+async function executeTool(
+  name: string,
+  args: Record<string, unknown>,
+  contextUserAddress?: string,
+): Promise<unknown> {
+  const effectiveAddress = contextUserAddress?.trim().toLowerCase() || "";
+  const requestedAddress = (args.user_address as string | undefined)
+    ?.trim()
+    .toLowerCase();
+  if (
+    requestedAddress &&
+    effectiveAddress &&
+    requestedAddress !== effectiveAddress
+  ) {
+    throw new Error(
+      "A chat tool cannot access a wallet other than the connected wallet.",
+    );
+  }
+  const requireWallet = () => {
+    if (!/^0x[a-f0-9]{40}$/.test(effectiveAddress)) {
+      throw new Error("Connect a wallet before requesting wallet history.");
+    }
+    return effectiveAddress;
+  };
   switch (name) {
     case "get_market_data":
-      return await getMarketData("BNBUSDT") as MarketData;
+      return (await getMarketData("BNBUSDT")) as MarketData;
     case "get_agent_balances":
       return await getLiveBalances();
     case "get_transactions": {
-      const { data, error } = await supabase.from("transactions").select("*")
-        .eq("user_address", effectiveAddress).order("created_at", { ascending: false }).limit((args.limit as number) || 20);
+      const walletAddress = requireWallet();
+      const { data, error } = await supabase
+        .from("transactions")
+        .select(
+          "id, user_address, amount, category, note, is_income, pair, tx_hash, created_at",
+        )
+        .eq("user_address", walletAddress)
+        .order("created_at", { ascending: false })
+        .limit(Math.max(1, Math.min(Number(args.limit) || 20, 50)));
       if (error) throw new Error(error.message);
       return data as Transaction[];
     }
     case "search_transactions":
-      return await semanticSearchTransactions(args.query as string, effectiveAddress, (args.limit as number) || 10);
+      return await semanticSearchUserHistory(
+        args.query as string,
+        requireWallet(),
+        Math.max(1, Math.min(Number(args.limit) || 10, 50)),
+      );
+    case "get_paper_trading_history":
+      return await getPaperPredictions(
+        requireWallet(),
+        Math.max(1, Math.min(Number(args.limit) || 20, 50)),
+      );
     case "get_trading_recommendation":
-      return await generateRecommendation(effectiveAddress, "BNBUSDT");
+      return await generateRecommendation(requireWallet(), "BNBUSDT");
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -91,22 +157,24 @@ Kamu adalah Nexa AI, asisten analisis pasar BNB/USDT dan trading DeFi yang objek
 <capabilities>
 1. get_market_data: data Binance BNB/USDT dan Fear & Greed.
 2. get_agent_balances: saldo agent tBNB/tUSDT on-chain.
-3. get_transactions dan search_transactions: jurnal transaksi pengguna.
-4. get_trading_recommendation: rekomendasi BUY/SELL/HOLD dari momentum 24 jam dan sentimen; nominal disesuaikan dengan saldo agent on-chain.
+3. get_transactions, search_transactions, dan get_paper_trading_history: histori jurnal on-chain serta evaluasi prediksi paper-trading milik wallet yang terhubung.
+4. get_trading_recommendation: rekomendasi BUY/SELL/HOLD berbasis prediksi Gemini, data Binance lima menit/24 jam, Fear & Greed, dan Monte Carlo 24 jam; nominal disesuaikan dengan saldo agent on-chain.
 </capabilities>
 <constraints>
-- Jangan menyebut atau menawarkan portofolio virtual maupun proyeksi harga tersintesis.
+- Bedakan hasil paper trading dari transaksi dan saldo on-chain yang nyata.
 - Jangan mengklaim eksekusi transaksi dari chat. Arahkan pengguna ke Live Agent DEX untuk meninjau dan menjalankan swap.
 - Gunakan tool untuk angka pasar atau saldo. Ini bukan nasihat keuangan; ingatkan DYOR.
 </constraints>`;
 
 const CANDIDATE_MODELS = [
-  env.GEMINI_MODEL,
+  ...(env.GEMINI_MODEL && !/^gemini-2\.5/i.test(env.GEMINI_MODEL)
+    ? [env.GEMINI_MODEL]
+    : []),
+  "gemini-3.8-flash",
   "gemini-3.5-flash-lite",
   "gemini-3.1-flash-lite",
-  "gemini-3.8-flash",
   "gemini-flash-latest",
-].filter(Boolean) as string[];
+].filter((model, index, models) => models.indexOf(model) === index);
 
 async function attemptChatWithModel(
   modelName: string,
@@ -118,9 +186,18 @@ async function attemptChatWithModel(
   const dynamicInstruction = isThinking
     ? `${SYSTEM_INSTRUCTION}\n<thinking_mode>Berikan ringkasan pertimbangan data di dalam <thought> sebelum jawaban akhir.</thinking_mode>`
     : SYSTEM_INSTRUCTION;
-  const model = genAI.getGenerativeModel({ model: modelName, systemInstruction: dynamicInstruction, tools: [{ functionDeclarations: tools }] });
-  const contents: Content[] = history.map((item) => ({ role: item.role === "user" ? "user" : "model", parts: [{ text: item.content }] }));
-  const userText = userAddress ? `[User wallet: ${userAddress}]\n\n${message}` : message;
+  const model = genAI.getGenerativeModel({
+    model: modelName,
+    systemInstruction: dynamicInstruction,
+    tools: [{ functionDeclarations: tools }],
+  });
+  const contents: Content[] = history.map((item) => ({
+    role: item.role === "user" ? "user" : "model",
+    parts: [{ text: item.content }],
+  }));
+  const userText = userAddress
+    ? `[User wallet: ${userAddress}]\n\n${message}`
+    : message;
   contents.push({ role: "user", parts: [{ text: userText }] });
   const chatSession = model.startChat({ history: contents.slice(0, -1) });
   let response = await chatSession.sendMessage(contents.at(-1)!.parts);
@@ -136,9 +213,27 @@ async function attemptChatWithModel(
       const call = part.functionCall;
       toolCalls.push(call.name);
       try {
-        functionResponses.push({ functionResponse: { name: call.name, response: { result: await executeTool(call.name, call.args as Record<string, unknown>, userAddress) } } });
+        functionResponses.push({
+          functionResponse: {
+            name: call.name,
+            response: {
+              result: await executeTool(
+                call.name,
+                call.args as Record<string, unknown>,
+                userAddress,
+              ),
+            },
+          },
+        });
       } catch (error) {
-        functionResponses.push({ functionResponse: { name: call.name, response: { error: error instanceof Error ? error.message : "Unknown error" } } });
+        functionResponses.push({
+          functionResponse: {
+            name: call.name,
+            response: {
+              error: error instanceof Error ? error.message : "Unknown error",
+            },
+          },
+        });
       }
     }
     response = await chatSession.sendMessage(functionResponses);
@@ -150,24 +245,62 @@ async function attemptChatWithModel(
   }
   const match = rawText.match(/<thought>([\s\S]*?)<\/thought>/i);
   const thought = match?.[1]?.trim();
-  const reply = rawText.replace(/<thought>[\s\S]*?<\/thought>/i, "").trim() || "Maaf, saya tidak bisa merespons saat ini.";
-  return { reply, thought: isThinking ? thought || "Memeriksa data pasar dan saldo on-chain yang relevan sebelum menyusun jawaban." : undefined, toolCalls };
+  const reply =
+    rawText.replace(/<thought>[\s\S]*?<\/thought>/i, "").trim() ||
+    "Maaf, saya tidak bisa merespons saat ini.";
+  return {
+    reply,
+    thought: isThinking
+      ? thought ||
+        "Memeriksa data pasar dan saldo on-chain yang relevan sebelum menyusun jawaban."
+      : undefined,
+    toolCalls,
+  };
 }
 
-export async function chat(message: string, history: ChatMessage[] = [], userAddress?: string, isThinking = false, preferredModel?: string) {
-  const models = preferredModel ? [preferredModel, ...CANDIDATE_MODELS.filter((model) => model !== preferredModel)] : CANDIDATE_MODELS;
+export async function chat(
+  message: string,
+  history: ChatMessage[] = [],
+  userAddress?: string,
+  isThinking = false,
+  preferredModel?: string,
+) {
+  const models = preferredModel
+    ? [
+        preferredModel,
+        ...CANDIDATE_MODELS.filter((model) => model !== preferredModel),
+      ]
+    : CANDIDATE_MODELS;
   let lastError: unknown;
   for (const modelName of models) {
     try {
       const result = await Promise.race([
-        attemptChatWithModel(modelName, message, history, userAddress, isThinking),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`Model ${modelName} request timed out after 10s`)), 10_000)),
+        attemptChatWithModel(
+          modelName,
+          message,
+          history,
+          userAddress,
+          isThinking,
+        ),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () =>
+              reject(
+                new Error(`Model ${modelName} request timed out after 10s`),
+              ),
+            10_000,
+          ),
+        ),
       ]);
       return { ...result, model_used: modelName };
     } catch (error) {
       lastError = error;
-      console.warn(`[Gemini] ${modelName} failed: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(
+        `[Gemini] ${modelName} failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
-  throw lastError || new Error("Semua model Gemini sedang tidak dapat diakses.");
+  throw (
+    lastError || new Error("Semua model Gemini sedang tidak dapat diakses.")
+  );
 }

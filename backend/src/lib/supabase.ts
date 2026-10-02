@@ -1,20 +1,7 @@
 /**
  * Supabase client for database operations.
  *
- * Expected table schema (create in Supabase Dashboard):
- *
- * CREATE TABLE transactions (
- *   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
- *   user_address TEXT NOT NULL,
- *   amount NUMERIC NOT NULL,
- *   category TEXT NOT NULL,
- *   note TEXT DEFAULT '',
- *   is_income BOOLEAN NOT NULL DEFAULT false,
- *   created_at TIMESTAMPTZ DEFAULT now()
- * );
- *
- * -- Optional: enable RLS
- * ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
+ * Run backend/migrations/schema.sql first, then semantic-search.sql for pgvector.
  */
 
 import { createClient } from "@supabase/supabase-js";
