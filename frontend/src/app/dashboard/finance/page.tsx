@@ -789,18 +789,16 @@ export default function FinancePage() {
 
                   // PnL adalah selisih harga langsung:
                   // - BUY: untung jika harga naik (+priceDiff)
-                  // - HOLD: tidak dihitung (0)
+                  // - HOLD: untung jika aset naik (+priceDiff)
                   // - SELL (AI): jika harga naik maka minus (-priceDiff), jika harga turun maka untung (-priceDiff)
                   // - SELL (Manual): untung jika harga jual lebih tinggi (+priceDiff)
                   const pnl = !hasPrices
-                    ? (prediction.action === "HOLD" ? 0 : Number(prediction.simulated_pnl_usdt) || 0)
+                    ? Number(prediction.simulated_pnl_usdt) || 0
                     : isManual
                       ? priceDiff
-                      : prediction.action === "HOLD"
-                        ? 0
-                        : prediction.action === "SELL"
-                          ? -priceDiff
-                          : priceDiff;
+                      : prediction.action === "SELL"
+                        ? -priceDiff
+                        : priceDiff;
 
                   const isCorrect =
                     isManual
