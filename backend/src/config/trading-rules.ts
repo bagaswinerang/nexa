@@ -13,7 +13,8 @@ export const EXECUTION_GUARDRAILS = {
 export const MARKET_DECISION_FACTORS = {
   TRADE_GAS_RESERVE_BNB: GAS_SAFETY_CONFIG.TRADE_GAS_RESERVE_BNB,
   MODEL_VERSION: "quant-v3",
-  PAPER_HORIZON_HOURS: 1,
+  /** 1 minute expressed in hours (1 ÷ 60). Predictions settle after ~1 min. */
+  PAPER_HORIZON_HOURS: 1 / 60,
 
   /** Weights for the composite alpha signal. Sum = 1.0. */
   FORECAST_WEIGHTS: {

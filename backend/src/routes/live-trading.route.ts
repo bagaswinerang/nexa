@@ -20,7 +20,8 @@ import {
   stopAutonomousTrading,
 } from "../services/autonomous-trading-service.js";
 import { generateRecommendation } from "../services/ai-recommend.js";
-import { getPaperPredictions } from "../services/paper-trading-service.js";
+import { getPaperPredictions, recordManualTradePrediction } from "../services/paper-trading-service.js";
+import { getMarketData } from "../services/quant-client.js";
 
 const liveTrading = new Hono();
 
@@ -74,14 +75,13 @@ liveTrading.get("/paper-trades", async (c) => {
   }
 });
 
-// ─── POST /live-trading/execute ──────────────────────────────────
-// Execute a real swap on PancakeSwap
 liveTrading.post("/execute", async (c) => {
   try {
     const body = await c.req.json<{
       user_address: string;
       action: "BUY" | "SELL";
       amount_usdt: number;
+      is_source_amount?: boolean;
       symbol?: string;
       reasoning?: string;
       slippage_pct?: number;
@@ -94,16 +94,87 @@ liveTrading.post("/execute", async (c) => {
       );
     }
 
-    const trade = await executeLivePancakeSwap({
-      action: body.action,
-      amountUsdt: body.amount_usdt,
-      userAddress: body.user_address,
-      symbol: body.symbol || "BNBUSDT",
-      reasoning: body.reasoning,
-      slippagePct: body.slippage_pct,
-    });
+    let trade: any = null;
+    let onChainWarning: string | null = null;
+    try {
+      trade = await executeLivePancakeSwap({
+        action: body.action,
+        amountUsdt: body.amount_usdt,
+        userAddress: body.user_address,
+        symbol: body.symbol || "BNBUSDT",
+        reasoning: body.reasoning,
+        slippagePct: body.slippage_pct,
+        isAmountSourceToken: body.is_source_amount,
+      });
+    } catch (swapErr) {
+      onChainWarning =
+        swapErr instanceof Error ? swapErr.message : "On-chain swap failed";
+      console.warn(
+        `[LiveTrading] ⚠️ On-chain execution failed (${onChainWarning}), recording to Paper Trading...`,
+      );
+    }
 
-    return c.json({ trade }, 201);
+    // Current BNB price for entry_price
+    const market = await getMarketData("BNBUSDT").catch(() => null);
+    const entryPrice = market?.price ?? 0;
+
+    // Record as immediately-settled paper prediction (no pending)
+    let paperPredictionId: string | null = null;
+    try {
+      paperPredictionId = await recordManualTradePrediction({
+        userAddress: body.user_address,
+        action: body.action,
+        entryPrice,
+        amountUsdt: body.amount_usdt,
+        txHash: trade?.txHash,
+        reasoning:
+          body.reasoning ||
+          (onChainWarning
+            ? `Manual swap (Paper: ${onChainWarning})`
+            : undefined),
+      });
+      console.log(
+        `[LiveTrading] ✅ Manual swap recorded in paper trading: id=${paperPredictionId}`,
+      );
+    } catch (paperErr) {
+      console.error(
+        `[LiveTrading] ❌ Failed to record manual trade to paper predictions: ${paperErr instanceof Error ? paperErr.message : String(paperErr)}`,
+      );
+    }
+
+    // Stop AI agent so it doesn't conflict with manual trading
+    const stopped = stopAutonomousTrading(body.user_address);
+    if (stopped) {
+      console.log(
+        `[LiveTrading] AI Agent auto-stopped after manual swap by ${body.user_address.slice(0, 8)}...`,
+      );
+    }
+
+    const tradeResponse = trade ?? {
+      success: true,
+      action: body.action,
+      txHash: `simulated-${Date.now().toString(16)}`,
+      explorerUrl: "",
+      amountIn: body.amount_usdt,
+      amountOut: entryPrice > 0 ? body.amount_usdt / entryPrice : 0,
+      tokenIn: body.action === "BUY" ? "tUSDT" : "tBNB",
+      tokenOut: body.action === "BUY" ? "tBNB" : "tUSDT",
+      symbol: body.symbol || "BNBUSDT",
+      reasoning: onChainWarning
+        ? `Paper trade recorded (${onChainWarning})`
+        : "Manual swap executed",
+      timestamp: new Date().toISOString(),
+    };
+
+    return c.json(
+      {
+        trade: tradeResponse,
+        ai_stopped: true,
+        paper_prediction_id: paperPredictionId,
+        on_chain_warning: onChainWarning,
+      },
+      201,
+    );
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Swap execution failed";

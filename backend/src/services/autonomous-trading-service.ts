@@ -163,9 +163,14 @@ async function runCycle(session: AutoTradeSession) {
     console.error(`[AutonomousTrading] ${session.status.last_error}`);
   } finally {
     session.status.is_analyzing = false;
-    // Gemini analysis is user-triggered and one-shot. A new request is made
-    // only when the user presses the Start button again.
-    session.status.active = false;
+    // Schedule next cycle if the session is still active.
+    // The agent keeps running until explicitly stopped (Stop button or manual swap).
+    if (session.status.active) {
+      session.timer = setTimeout(() => void runCycle(session), AUTO_TRADE_COOLDOWN_MS);
+      console.log(
+        `[AutonomousTrading] Next cycle in ${AUTO_TRADE_COOLDOWN_MS / 1000}s for ${session.options.userAddress.slice(0, 8)}...`,
+      );
+    }
   }
 }
 
@@ -195,7 +200,7 @@ export function startAutonomousTrading(
       is_analyzing: false,
       user_address: options.userAddress,
       symbol: options.symbol,
-      interval_ms: 0,
+      interval_ms: AUTO_TRADE_COOLDOWN_MS,
       started_at: new Date().toISOString(),
       recent_decisions: [],
     },

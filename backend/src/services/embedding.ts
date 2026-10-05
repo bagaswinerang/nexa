@@ -151,9 +151,9 @@ async function searchUserHistoryText(
       similarity: 0,
     })),
   ];
-  const terms = [
-    ...new Set(query.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) || []),
-  ];
+  const terms = Array.from(
+    new Set(query.toLowerCase().match(/[a-z0-9]{3,}/g) || []),
+  );
 
   return candidates
     .map((candidate) => ({

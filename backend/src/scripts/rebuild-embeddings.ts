@@ -86,15 +86,17 @@ async function rebuildPaperPredictions(): Promise<number> {
   return updated;
 }
 
-try {
-  const transactionCount = await rebuildTransactions();
-  const paperCount = await rebuildPaperPredictions();
-  console.log(
-    `[EmbeddingBackfill] Complete: ${transactionCount} transactions and ${paperCount} paper predictions rebuilt.`,
-  );
-} catch (error) {
-  console.error(
-    `[EmbeddingBackfill] Failed: ${error instanceof Error ? error.message : String(error)}`,
-  );
-  process.exitCode = 1;
-}
+(async () => {
+  try {
+    const transactionCount = await rebuildTransactions();
+    const paperCount = await rebuildPaperPredictions();
+    console.log(
+      `[EmbeddingBackfill] Complete: ${transactionCount} transactions and ${paperCount} paper predictions rebuilt.`,
+    );
+  } catch (error) {
+    console.error(
+      `[EmbeddingBackfill] Failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    process.exitCode = 1;
+  }
+})();

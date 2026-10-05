@@ -216,6 +216,7 @@ export interface LiveTradeRequest {
   symbol?: string;
   reasoning?: string;
   slippagePct?: number; // default 1.0%
+  isAmountSourceToken?: boolean;
 }
 
 export interface LiveTradeResponse {
@@ -378,8 +379,14 @@ export async function executeLivePancakeSwap(
     if (!Number.isFinite(bnbPriceInUsdt) || bnbPriceInUsdt <= 0) {
       throw new Error("Unable to determine BNB price from router.");
     }
-    const bnbToSell = requestedUsdt / bnbPriceInUsdt;
-    const amountInWei = parseEther(bnbToSell.toFixed(6));
+    
+    let amountInWei: bigint;
+    if (req.isAmountSourceToken) {
+      amountInWei = parseEther(requestedUsdt.toFixed(6));
+    } else {
+      const bnbToSell = requestedUsdt / bnbPriceInUsdt;
+      amountInWei = parseEther(bnbToSell.toFixed(6));
+    }
 
     // Check BNB balance (keep gas reserve configured in trading-rules)
     const bnbBal = await publicClient.getBalance({ address: account.address });

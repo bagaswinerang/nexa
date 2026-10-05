@@ -37,6 +37,8 @@ export interface PaperPrediction {
 function isMissingModelSchema(error: { code?: string; message?: string }) {
   return (
     error.code === "42703" ||
+    error.code === "PGRST204" ||
+    /decision_bucket|model_version/i.test(error.message || "") ||
     /column paper_predictions\.(decision_bucket|model_version) does not exist/i.test(
       error.message || "",
     )
@@ -148,6 +150,126 @@ export async function recordPaperPrediction(input: {
         `[PaperTrading] Prediction ${predictionId} saved; embedding failed: ${embeddingError instanceof Error ? embeddingError.message : String(embeddingError)}`,
       );
     });
+  return predictionId;
+}
+
+/**
+ * Record a manual swap as an immediately-settled paper prediction.
+ * Manual trades skip the pending window — entry and settlement data are known
+ * at execution time so the row is inserted fully resolved.
+ */
+export async function recordManualTradePrediction(input: {
+  userAddress: string;
+  action: "BUY" | "SELL";
+  entryPrice: number;
+  amountUsdt: number;
+  txHash?: string;
+  reasoning?: string;
+}): Promise<string> {
+  const now = new Date().toISOString();
+  const normalizedAddress = input.userAddress.toLowerCase();
+
+  // Fetch previous record to compute interval move (e.g. 706 -> 707)
+  const { data: lastRecord } = await supabase
+    .from("paper_predictions")
+    .select("entry_price, settlement_price, predicted_at")
+    .eq("user_address", normalizedAddress)
+    .order("predicted_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const prevPriceNum = lastRecord
+    ? Number(lastRecord.settlement_price ?? lastRecord.entry_price)
+    : 0;
+  const entryPrice = prevPriceNum > 0 ? prevPriceNum : input.entryPrice;
+  const settlementPrice = input.entryPrice;
+  const priceDiff = Number((settlementPrice - entryPrice).toFixed(2));
+  const actualReturnPct = entryPrice > 0 ? (priceDiff / entryPrice) * 100 : 0;
+
+  // PnL adalah selisih harga langsung:
+  const simulatedPnl = priceDiff;
+  const directionCorrect = priceDiff >= 0;
+
+  const baseRow = {
+    user_address: normalizedAddress,
+    pair: "BNB/USDT",
+    action: input.action,
+    confidence: 100,
+    gemini_up_probability: input.action === "BUY" ? 100 : 0,
+    gemini_factor_scores: { manual: 1.0 },
+    entry_price: entryPrice,
+    price_5m_ago: entryPrice,
+    change_5m_pct: Number(actualReturnPct.toFixed(3)),
+    change_24h_pct: 0,
+    fear_greed_index: null,
+    fear_greed_label: null,
+    monte_carlo_probability_up: input.action === "BUY" ? 1 : 0,
+    monte_carlo_median_price: settlementPrice,
+    simulated_notional_usdt: input.amountUsdt,
+    summary: `[Manual Swap] ${input.action} oleh user`,
+    reasoning:
+      input.reasoning ||
+      `Manual swap on PancakeSwap by ${normalizedAddress.slice(0, 6)}...`,
+    settles_at: now,
+    settlement_price: settlementPrice,
+    actual_return_pct: Number(actualReturnPct.toFixed(3)),
+    simulated_pnl_usdt: Number(simulatedPnl.toFixed(2)),
+    direction_correct: directionCorrect,
+    settled_at: now,
+  };
+
+  let insertResult = await supabase
+    .from("paper_predictions")
+    .insert({
+      ...baseRow,
+      decision_bucket: `manual-${now}`,
+      model_version: "manual",
+    })
+    .select("id")
+    .single();
+
+  if (insertResult.error && isMissingModelSchema(insertResult.error)) {
+    insertResult = await supabase
+      .from("paper_predictions")
+      .insert(baseRow)
+      .select("id")
+      .single();
+  }
+
+  const { data, error } = insertResult;
+
+  if (error || !data) {
+    console.error(
+      `[PaperTrading] Failed to record manual trade prediction: ${error?.message || "no row returned"}`,
+    );
+    throw new Error(
+      `Could not record manual trade prediction: ${error?.message || "no row returned"}`,
+    );
+  }
+
+  const predictionId = data.id as string;
+  console.log(
+    `[PaperTrading] Manual trade recorded as paper prediction ${predictionId}: ${input.action} @ $${input.entryPrice}`,
+  );
+
+  // Generate embedding in background (non-blocking)
+  const embeddingText = JSON.stringify({
+    type: "manual_trade_prediction",
+    pair: "BNB/USDT",
+    action: input.action,
+    entry_price: input.entryPrice,
+    summary: baseRow.summary,
+    reasoning: baseRow.reasoning,
+  });
+  void generateEmbedding(embeddingText, "RETRIEVAL_DOCUMENT")
+    .then(async (embedding) => {
+      await supabase
+        .from("paper_predictions")
+        .update({ embedding })
+        .eq("id", predictionId);
+    })
+    .catch(() => {});
+
   return predictionId;
 }
 
@@ -268,27 +390,21 @@ export async function settleDuePaperPredictions(): Promise<void> {
 
   for (const prediction of pending) {
     const entryPrice = Number(prediction.entry_price);
-    const actualReturnPct = ((market.price - entryPrice) / entryPrice) * 100;
-    const notional = Number(prediction.simulated_notional_usdt);
+    const priceDiff = Number((market.price - entryPrice).toFixed(2));
+    const actualReturnPct = entryPrice > 0 ? (priceDiff / entryPrice) * 100 : 0;
     const action = prediction.action as PaperPrediction["action"];
-    // BUY holds USDT bought with BNB, so performance is measured in BNB and
-    // moves inversely to BNB/USDT. SELL returns the USDT position to BNB.
-    const directionalReturnPct =
-      action === "BUY"
-        ? -actualReturnPct
-        : action === "SELL"
-          ? actualReturnPct
-          : 0;
-    const simulatedPnl =
-      action === "HOLD"
-        ? 0
-        : (notional * (directionalReturnPct - feePct)) / 100;
+
+    // PnL adalah selisih harga langsung:
+    // BUY: untung jika harga naik (+priceDiff)
+    // HOLD: tidak dihitung dalam PnL simulasi (0)
+    // SELL: untung jika harga turun (-priceDiff), jika harga naik maka minus (-priceDiff)
+    const simulatedPnl = action === "HOLD" ? 0 : action === "SELL" ? -priceDiff : priceDiff;
     const directionCorrect =
       action === "BUY"
-        ? actualReturnPct < 0
+        ? priceDiff > 0
         : action === "SELL"
-          ? actualReturnPct > 0
-          : Math.abs(actualReturnPct) <= neutralMovePct;
+          ? priceDiff < 0
+          : priceDiff >= 0;
 
     const settlementText = JSON.stringify({
       type: "paper_prediction_settled",
@@ -338,6 +454,6 @@ export function startPaperPredictionSettlementWorker(): void {
     });
   };
   run();
-  const timer = setInterval(run, 60_000);
+  const timer = setInterval(run, 15_000);
   Reflect.get(Object(timer), "unref")?.call(timer);
 }
