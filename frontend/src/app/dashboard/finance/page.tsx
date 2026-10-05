@@ -155,10 +155,28 @@ export default function FinancePage() {
   const settledPaperTrades = settledPaper.filter(
     (prediction) => prediction.action !== "HOLD",
   );
-  const paperNetPnl = settledPaperTrades.reduce(
-    (sum, prediction) => sum + (Number(prediction.simulated_pnl_usdt) || 0),
-    0,
-  );
+  const paperNetPnl = settledPaperTrades.reduce((sum, prediction) => {
+    const isManual =
+      prediction.model_version === "manual" ||
+      prediction.summary?.startsWith("[Manual Swap]");
+    const hasPrices =
+      prediction.settlement_price !== null && prediction.entry_price !== null;
+    const priceDiff = hasPrices
+      ? Number(
+          (
+            Number(prediction.settlement_price) - Number(prediction.entry_price)
+          ).toFixed(2),
+        )
+      : 0;
+    const pnl = !hasPrices
+      ? Number(prediction.simulated_pnl_usdt) || 0
+      : isManual
+        ? priceDiff
+        : prediction.action === "SELL"
+          ? -priceDiff
+          : priceDiff;
+    return sum + pnl;
+  }, 0);
   const paperTradeAccuracy = settledPaperTrades.length
     ? (settledPaperTrades.filter((prediction) => prediction.direction_correct)
         .length /
@@ -696,14 +714,7 @@ export default function FinancePage() {
             <span className="text-gray-400">
               Selesai <b className="text-white">{settledPaper.length}</b>
             </span>
-            <span className="text-gray-400">
-              Akurasi semua{" "}
-              <b className="text-white">
-                {settledPaper.length
-                  ? `${((settledPaper.filter((prediction) => prediction.direction_correct).length / settledPaper.length) * 100).toFixed(1)}%`
-                  : "—"}
-              </b>
-            </span>
+
             <span className="text-gray-400">
               Trade{" "}
               <b className="text-white">
@@ -759,16 +770,68 @@ export default function FinancePage() {
               <tbody className="divide-y divide-white/[0.03]">
                 {paperPredictions.map((prediction) => {
                   const pending = !prediction.settled_at;
-                  const pnl = Number(prediction.simulated_pnl_usdt) || 0;
+                  const isManual =
+                    prediction.model_version === "manual" ||
+                    prediction.summary?.startsWith("[Manual Swap]");
+
+                  // Selisih harga aktual: settlement_price - entry_price
+                  const hasPrices =
+                    prediction.settlement_price !== null &&
+                    prediction.entry_price !== null;
+                  const priceDiff = hasPrices
+                    ? Number(
+                        (
+                          Number(prediction.settlement_price) -
+                          Number(prediction.entry_price)
+                        ).toFixed(2),
+                      )
+                    : 0;
+
+                  // PnL adalah selisih harga langsung:
+                  // - BUY: untung jika harga naik (+priceDiff)
+                  // - HOLD: tidak dihitung (0)
+                  // - SELL (AI): jika harga naik maka minus (-priceDiff), jika harga turun maka untung (-priceDiff)
+                  // - SELL (Manual): untung jika harga jual lebih tinggi (+priceDiff)
+                  const pnl = !hasPrices
+                    ? (prediction.action === "HOLD" ? 0 : Number(prediction.simulated_pnl_usdt) || 0)
+                    : isManual
+                      ? priceDiff
+                      : prediction.action === "HOLD"
+                        ? 0
+                        : prediction.action === "SELL"
+                          ? -priceDiff
+                          : priceDiff;
+
+                  const isCorrect =
+                    isManual
+                      ? priceDiff >= 0
+                      : prediction.action === "BUY"
+                        ? priceDiff > 0
+                        : prediction.action === "SELL"
+                          ? priceDiff < 0
+                          : priceDiff >= 0;
+
                   const result = pending
                     ? "Pending"
-                    : prediction.action === "HOLD"
-                      ? prediction.direction_correct
-                        ? "HOLD tepat"
-                        : "HOLD meleset"
-                      : prediction.direction_correct
-                        ? "Arah tepat"
-                        : "Arah meleset";
+                    : isManual
+                      ? prediction.action === "SELL"
+                        ? isCorrect
+                          ? "SELL tepat"
+                          : "SELL meleset"
+                        : isCorrect
+                          ? "BUY tepat"
+                          : "BUY meleset"
+                      : prediction.action === "HOLD"
+                        ? isCorrect
+                          ? "HOLD tepat"
+                          : "HOLD meleset"
+                        : prediction.action === "BUY"
+                          ? isCorrect
+                            ? "BUY tepat"
+                            : "BUY meleset"
+                          : isCorrect
+                            ? "SELL tepat"
+                            : "SELL meleset";
                   return (
                     <tr key={prediction.id} className="text-xs">
                       <td className="py-3 font-mono text-gray-400">
@@ -779,10 +842,21 @@ export default function FinancePage() {
                       <td
                         className={`font-bold ${prediction.action === "BUY" ? "text-emerald-400" : prediction.action === "SELL" ? "text-rose-400" : "text-gray-300"}`}
                       >
-                        {prediction.action}{" "}
-                        <span className="font-normal text-gray-500">
-                          · {Number(prediction.confidence).toFixed(1)}%
-                        </span>
+                        {isManual ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 uppercase">
+                              Manual
+                            </span>
+                            <span>{prediction.action}</span>
+                          </span>
+                        ) : (
+                          <>
+                            {prediction.action}{" "}
+                            <span className="font-normal text-gray-500">
+                              · {Number(prediction.confidence).toFixed(1)}%
+                            </span>
+                          </>
+                        )}
                       </td>
                       <td>
                         {Number(prediction.gemini_up_probability).toFixed(1)}%
@@ -814,9 +888,11 @@ export default function FinancePage() {
                         className={
                           pending
                             ? "text-amber-400"
-                            : prediction.direction_correct
-                              ? "text-emerald-400"
-                              : "text-rose-400"
+                            : isManual
+                              ? "text-cyan-400 font-medium"
+                              : isCorrect
+                                ? "text-emerald-400 font-medium"
+                                : "text-rose-400 font-medium"
                         }
                       >
                         {result}

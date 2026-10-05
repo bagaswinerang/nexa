@@ -443,16 +443,30 @@ export default function LivePancakeSwapCard({
         user_address: userAddress,
         action,
         amount_usdt: amountUsdt,
+        is_source_amount: true,
         symbol: "BNBUSDT",
         reasoning: `Manual swap on PancakeSwap by ${userAddress.slice(0, 6)}...`,
       });
 
+      // Backend auto-stops AI agent and records paper prediction on success.
+      // Reflect the AI-stopped state in the frontend immediately.
+      if ((res as any).ai_stopped) {
+        setIsAutoRunning(false);
+        setIsAutoPaused(false);
+        setAnalysisCycle({ state: "idle" });
+      }
+
       setMessage({
         type: "success",
-        text: `Swap on PancakeSwap Berhasil! Tx Hash terverifikasi di BscScan.`,
+        text: `Swap on PancakeSwap Berhasil! Tx Hash terverifikasi di BscScan.${(res as any).ai_stopped ? " AI Agent otomatis dihentikan." : ""}`,
         txHash: res.trade.txHash,
       });
+
+      // Refresh balances, paper predictions, and trade journal
       fetchBalancesAndSummary();
+      getPaperPredictions(userAddress, 50)
+        .then((result) => setPaperPredictions(result.predictions))
+        .catch(() => {});
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : "Swap failed";
       setMessage({ type: "error", text: errMsg });
@@ -560,33 +574,51 @@ export default function LivePancakeSwapCard({
           : analysisToDisplay?.action === "SELL"
             ? "bg-rose-500/10 text-rose-400 border-rose-500/30"
             : "bg-amber-500/10 text-amber-400 border-amber-500/30";
-  const decisionLogRows: AgentActivityRow[] = autoDecisionLogs.length
-    ? autoDecisionLogs.map((decision) => ({
-        id: `${decision.timestamp}-${decision.action}`,
-        action: decision.action,
-        confidence: decision.confidence,
-        summary: decision.summary,
-        reasoning: decision.reasoning,
-        timestamp: decision.timestamp,
-        status: decision.executed ? "on-chain executed" : "no swap",
-        txHash: decision.trade?.txHash,
-        explorerUrl: decision.trade?.explorerUrl,
-      }))
-    : paperPredictions.map((prediction) => ({
-        id: prediction.id,
-        action: prediction.action,
-        confidence: prediction.confidence,
-        summary: prediction.summary,
-        reasoning: prediction.reasoning,
-        timestamp: prediction.predicted_at,
-        status: !prediction.settled_at
-          ? "menunggu hasil 24 jam"
-          : prediction.direction_correct
-            ? "arah tepat"
-            : "arah meleset",
-      }));
+  const paperRows: AgentActivityRow[] = paperPredictions.map((prediction) => ({
+    id: prediction.id,
+    action: prediction.action,
+    confidence:
+      prediction.model_version === "manual" ? null : prediction.confidence,
+    summary: prediction.summary,
+    reasoning: prediction.reasoning,
+    timestamp: prediction.predicted_at,
+    status: !prediction.settled_at
+      ? "menunggu hasil 1 menit"
+      : prediction.model_version === "manual"
+        ? prediction.direction_correct
+          ? "manual swap (tepat)"
+          : "manual swap (meleset)"
+        : prediction.direction_correct
+          ? "arah tepat"
+          : "arah meleset",
+  }));
+
+  const autoDecisionRows: AgentActivityRow[] = autoDecisionLogs.map(
+    (decision) => ({
+      id: `${decision.timestamp}-${decision.action}`,
+      action: decision.action,
+      confidence: decision.confidence,
+      summary: decision.summary,
+      reasoning: decision.reasoning,
+      timestamp: decision.timestamp,
+      status: decision.executed ? "on-chain executed" : "no swap",
+      txHash: decision.trade?.txHash,
+      explorerUrl: decision.trade?.explorerUrl,
+    }),
+  );
+
+  const seenKeys = new Set<string>();
+  const combinedDecisions: AgentActivityRow[] = [];
+  for (const row of [...paperRows, ...autoDecisionRows]) {
+    const key = `${row.timestamp.slice(0, 19)}-${row.action}`;
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      combinedDecisions.push(row);
+    }
+  }
+
   const decisionTradeHashes = new Set(
-    decisionLogRows
+    combinedDecisions
       .map((row) => row.txHash)
       .filter((hash): hash is string => Boolean(hash)),
   );
@@ -621,7 +653,7 @@ export default function LivePancakeSwapCard({
       };
     })
     .filter((row) => !row.txHash || !decisionTradeHashes.has(row.txHash));
-  const activityLogRows = [...decisionLogRows, ...liveTradeRows]
+  const activityLogRows = [...combinedDecisions, ...liveTradeRows]
     .sort(
       (left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp),
     )
@@ -784,19 +816,16 @@ export default function LivePancakeSwapCard({
       <div className="flex flex-col sm:flex-row items-end gap-3 mb-4">
         <div className="w-full sm:w-44">
           <label className="text-[11px] font-semibold text-slate-400 block mb-1.5">
-            Nominal Trade (tUSDT)
+            Nominal Trade
           </label>
           <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono">
-              $
-            </span>
             <input
               type="number"
               min="0"
               step="any"
               value={amountUsdt}
               onChange={(e) => setAmountUsdt(Number(e.target.value))}
-              className="w-full bg-[#0b0e14] border border-white/10 rounded-xl pl-7 pr-3 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500/50 font-mono"
+              className="w-full bg-[#0b0e14] border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500/50 font-mono"
             />
           </div>
         </div>

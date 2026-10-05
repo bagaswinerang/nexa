@@ -320,6 +320,7 @@ export async function executeLiveSwap(params: {
   user_address: string;
   action: "BUY" | "SELL";
   amount_usdt: number;
+  is_source_amount?: boolean;
   symbol?: "BNBUSDT";
   reasoning?: string;
   slippage_pct?: number;
