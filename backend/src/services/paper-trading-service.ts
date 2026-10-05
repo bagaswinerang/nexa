@@ -396,9 +396,9 @@ export async function settleDuePaperPredictions(): Promise<void> {
 
     // PnL adalah selisih harga langsung:
     // BUY: untung jika harga naik (+priceDiff)
-    // HOLD: tidak dihitung dalam PnL simulasi (0)
+    // HOLD: untung jika aset naik (+priceDiff)
     // SELL: untung jika harga turun (-priceDiff), jika harga naik maka minus (-priceDiff)
-    const simulatedPnl = action === "HOLD" ? 0 : action === "SELL" ? -priceDiff : priceDiff;
+    const simulatedPnl = action === "SELL" ? -priceDiff : priceDiff;
     const directionCorrect =
       action === "BUY"
         ? priceDiff > 0
