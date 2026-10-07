@@ -66,3 +66,5 @@ async def simulate(request: SimulationRequest):
         return monte_carlo.simulate(request.symbol, spot.price, drift, volatility, periods, periods_per_year, request.simulations, request.horizon, label)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Binance Quant Lab failed: {exc}") from exc
+# 
+
