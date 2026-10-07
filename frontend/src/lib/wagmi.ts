@@ -26,7 +26,7 @@ const connectors = connectorsForWallets(
     },
   ],
   {
-    appName: "Nexa DeFi Quant Terminal",
+    appName: "Nexa AI Co-Pilot",
     projectId,
   }
 );

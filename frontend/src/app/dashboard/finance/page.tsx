@@ -469,187 +469,120 @@ export default function FinancePage() {
           </div>
         </div>
 
-        {/* Ledger Table */}
-        <div className="overflow-x-auto -mx-4 sm:mx-0">
-          <table className="w-full text-left min-w-[620px]">
-            <thead>
-              <tr className="border-b border-white/5 text-[11px] font-mono uppercase text-gray-500 tracking-wider">
-                <th className="pb-3 pl-4 sm:pl-2">{t("colStrategyNote")}</th>
-                <th className="pb-3">{t("pairLabel")}</th>
-                <th className="pb-3">{t("categoryLabel")}</th>
-                <th className="pb-3">{t("colProofHash")}</th>
-                <th className="pb-3 text-right">{t("colAmount")}</th>
-                <th className="pb-3 text-right pr-4 sm:pr-2">
-                  {t("colActions")}
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/[0.03]">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={6} className="py-16 text-center">
-                    <div className="flex flex-col items-center justify-center text-gray-500 gap-3">
-                      <RefreshCw className="w-6 h-6 animate-spin text-[#00D492]" />
-                      <span className="text-xs font-mono text-gray-400">
-                        {language === "id"
-                          ? "Menyinkronkan transaksi dengan database Supabase..."
-                          : "Synchronizing records with Supabase database..."}
-                      </span>
-                    </div>
-                  </td>
-                </tr>
-              ) : filteredTransactions.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-16 text-center">
-                    <div className="flex flex-col items-center justify-center text-gray-500 gap-2">
-                      <Database className="w-8 h-8 text-gray-600 mb-1" />
-                      <span className="text-sm font-medium text-gray-300">
-                        {copy.noTransactions}
-                      </span>
-                      <span className="text-xs font-mono text-gray-500">
-                        {copy.recordTransaction}
-                      </span>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                filteredTransactions.map((tx) => {
-                  const isGain =
-                    tx.category === "Trade Profit" ||
-                    tx.category === "Staking Yield";
-                  const isLoss = tx.category === "Trade Loss";
-                  const isDep = tx.category === "Deposit";
-                  const isWd = tx.category === "Withdrawal";
-                  const isLiveTrade = tx.category === "Live Trade";
+        {/* Ledger — Mobile Cards + Desktop Table */}
+        {isLoading ? (
+          <div className="py-16 flex flex-col items-center justify-center text-gray-500 gap-3">
+            <RefreshCw className="w-6 h-6 animate-spin text-[#00D492]" />
+            <span className="text-xs font-mono text-gray-400">
+              {language === "id"
+                ? "Menyinkronkan transaksi dengan database Supabase..."
+                : "Synchronizing records with Supabase database..."}
+            </span>
+          </div>
+        ) : filteredTransactions.length === 0 ? (
+          <div className="py-16 flex flex-col items-center justify-center text-gray-500 gap-2">
+            <Database className="w-8 h-8 text-gray-600 mb-1" />
+            <span className="text-sm font-medium text-gray-300">
+              {copy.noTransactions}
+            </span>
+            <span className="text-xs font-mono text-gray-500">
+              {copy.recordTransaction}
+            </span>
+          </div>
+        ) : (
+          <>
+            {/* Mobile Card Layout */}
+            <div className="md:hidden space-y-3">
+              {filteredTransactions.map((tx) => {
+                const isGain =
+                  tx.category === "Trade Profit" ||
+                  tx.category === "Staking Yield";
+                const isLoss = tx.category === "Trade Loss";
+                const isDep = tx.category === "Deposit";
+                const isWd = tx.category === "Withdrawal";
+                const isLiveTrade = tx.category === "Live Trade";
 
-                  const categoryDisplay =
-                    tx.category === "Trade Profit"
-                      ? t("tradeProfitCategory")
-                      : tx.category === "Trade Loss"
-                        ? t("tradeLossCategory")
-                        : tx.category === "Deposit"
-                          ? t("depositCategory")
-                          : tx.category === "Withdrawal"
-                            ? t("withdrawalCategory")
-                            : tx.category === "Trading Fee"
-                              ? t("tradingFeeCategory")
-                              : tx.category === "Staking Yield"
-                                ? t("stakingYieldCategory")
-                                : tx.category;
+                const categoryDisplay =
+                  tx.category === "Trade Profit"
+                    ? t("tradeProfitCategory")
+                    : tx.category === "Trade Loss"
+                      ? t("tradeLossCategory")
+                      : tx.category === "Deposit"
+                        ? t("depositCategory")
+                        : tx.category === "Withdrawal"
+                          ? t("withdrawalCategory")
+                          : tx.category === "Trading Fee"
+                            ? t("tradingFeeCategory")
+                            : tx.category === "Staking Yield"
+                              ? t("stakingYieldCategory")
+                              : tx.category;
 
-                  const cleanNote = String(tx.note || "")
-                    .replace(/^\[PancakeSwap On-Chain\]\s*/, "")
-                    .replace(/\s*[—-]\s*Ditukar\s*/, " · ")
-                    .replace(/\s*\.\s*Reasoning:[\s\S]*$/, "")
-                    .replace(/\s+menjadi\s+/, " → ")
-                    .replace(/\bBNBUSDT\b/g, "BNB/USDT");
-                  const hasValidTxHash = /^0x[a-fA-F0-9]{64}$/.test(tx.hash);
-                  const explorerBase = String(tx.pair || "").startsWith("t")
-                    ? "https://testnet.bscscan.com"
-                    : "https://bscscan.com";
+                const cleanNote = String(tx.note || "")
+                  .replace(/^\[PancakeSwap On-Chain\]\s*/, "")
+                  .replace(/\s*[—-]\s*Ditukar\s*/, " · ")
+                  .replace(/\s*\.\s*Reasoning:[\s\S]*$/, "")
+                  .replace(/\s+menjadi\s+/, " → ")
+                  .replace(/\bBNBUSDT\b/g, "BNB/USDT");
+                const hasValidTxHash = /^0x[a-fA-F0-9]{64}$/.test(tx.hash);
+                const explorerBase = String(tx.pair || "").startsWith("t")
+                  ? "https://testnet.bscscan.com"
+                  : "https://bscscan.com";
 
-                  return (
-                    <tr
-                      key={tx.id}
-                      className="hover:bg-white/[0.02] transition-colors group"
-                    >
-                      {/* Type & Note */}
-                      <td className="py-4 pl-4 sm:pl-2">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
-                              isGain
-                                ? "bg-[#00D492]/10 border-[#00D492]/30 text-[#00D492]"
-                                : isLoss
-                                  ? "bg-rose-500/10 border-rose-500/30 text-rose-400"
-                                  : isDep
-                                    ? "bg-blue-500/10 border-blue-500/30 text-blue-400"
-                                    : "bg-amber-500/10 border-amber-500/30 text-amber-400"
-                            }`}
-                          >
-                            {isGain && (
-                              <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
-                            )}
-                            {isLoss && (
-                              <ArrowDownRight className="w-4 h-4 stroke-[2.5]" />
-                            )}
-                            {isDep && (
-                              <ArrowDownLeft className="w-4 h-4 stroke-[2.5]" />
-                            )}
-                            {isWd && (
-                              <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
-                            )}
-                            {!isGain && !isLoss && !isDep && !isWd && (
-                              <Coins className="w-4 h-4" />
-                            )}
-                          </div>
-                          <div>
-                            <div className="font-semibold text-sm text-white">
-                              {cleanNote}
-                            </div>
-                            <div className="text-[11px] font-mono text-gray-500 flex items-center gap-1.5 mt-0.5">
-                              <Clock className="w-3 h-3" />
-                              {new Date(tx.created_at).toLocaleDateString(
-                                language === "id" ? "id-ID" : "en-US",
-                                {
-                                  day: "numeric",
-                                  month: "short",
-                                  year: "numeric",
-                                },
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Pair */}
-                      <td className="py-4">
-                        <span className="font-mono text-xs text-[#00D492] font-semibold bg-[#26A17B]/10 px-2 py-0.5 rounded border border-[#26A17B]/20">
-                          {tx.pair || "BNB/USDT"}
-                        </span>
-                      </td>
-
-                      {/* Category Badge */}
-                      <td className="py-4">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono border ${
+                return (
+                  <div
+                    key={tx.id}
+                    className="p-4 rounded-xl bg-[#080B11] border border-white/5 space-y-3"
+                  >
+                    {/* Top: Icon + Note + Amount */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <div
+                          className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
                             isGain
-                              ? "bg-[#00D492]/10 text-[#00D492] border-[#00D492]/30"
+                              ? "bg-[#00D492]/10 border-[#00D492]/30 text-[#00D492]"
                               : isLoss
-                                ? "bg-rose-500/10 text-rose-400 border-rose-500/30"
+                                ? "bg-rose-500/10 border-rose-500/30 text-rose-400"
                                 : isDep
-                                  ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
-                                  : "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                                  ? "bg-blue-500/10 border-blue-500/30 text-blue-400"
+                                  : "bg-amber-500/10 border-amber-500/30 text-amber-400"
                           }`}
                         >
-                          {categoryDisplay}
-                        </span>
-                      </td>
-
-                      {/* BSC On-Chain Proof */}
-                      <td className="py-4">
-                        {hasValidTxHash ? (
-                          <a
-                            href={`${explorerBase}/tx/${tx.hash}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            title={tx.hash}
-                            className="inline-flex items-center gap-1.5 font-mono text-xs text-gray-400 hover:text-[#00D492] transition-colors"
-                          >
-                            <span>{`${tx.hash.slice(0, 10)}...${tx.hash.slice(-8)}`}</span>
-                            <ExternalLink className="w-3 h-3 text-gray-500 group-hover:text-[#00D492]" />
-                          </a>
-                        ) : (
-                          <span className="font-mono text-xs text-gray-600">
-                            —
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Amount */}
-                      <td className="py-4 text-right">
+                          {isGain && (
+                            <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
+                          )}
+                          {isLoss && (
+                            <ArrowDownRight className="w-4 h-4 stroke-[2.5]" />
+                          )}
+                          {isDep && (
+                            <ArrowDownLeft className="w-4 h-4 stroke-[2.5]" />
+                          )}
+                          {isWd && (
+                            <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
+                          )}
+                          {!isGain && !isLoss && !isDep && !isWd && (
+                            <Coins className="w-4 h-4" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-semibold text-sm text-white truncate">
+                            {cleanNote}
+                          </div>
+                          <div className="text-[11px] font-mono text-gray-500 flex items-center gap-1.5 mt-0.5">
+                            <Clock className="w-3 h-3 shrink-0" />
+                            {new Date(tx.created_at).toLocaleDateString(
+                              language === "id" ? "id-ID" : "en-US",
+                              {
+                                day: "numeric",
+                                month: "short",
+                                year: "numeric",
+                              },
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
                         <div
-                          className={`font-mono font-bold text-sm md:text-base ${
+                          className={`font-mono font-bold text-sm ${
                             isGain || isDep
                               ? "text-[#00D492]"
                               : isLiveTrade
@@ -663,40 +596,254 @@ export default function FinancePage() {
                             maximumFractionDigits: 2,
                           })}
                         </div>
-                        <div className="text-[10px] font-mono text-gray-500">
-                          {isLiveTrade
-                            ? language === "id"
-                              ? "Swap on-chain · bukan PnL"
-                              : "On-chain swap · not PnL"
-                            : tx.category === "Deposit"
-                              ? language === "id"
-                                ? "Modal Masuk"
-                                : "Capital In"
-                              : tx.category === "Withdrawal"
-                                ? language === "id"
-                                  ? "Modal Keluar"
-                                  : "Capital Out"
-                                : categoryDisplay}
-                        </div>
-                      </td>
+                      </div>
+                    </div>
 
-                      {/* Delete Action */}
-                      <td className="py-4 text-right pr-4 sm:pr-2">
-                        <button
-                          onClick={() => handleDelete(tx.id)}
-                          className="p-1.5 rounded-lg text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 opacity-40 group-hover:opacity-100 transition-all"
-                          title={t("delete")}
+                    {/* Bottom: Badges + Hash + Delete */}
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/5">
+                      <div className="flex items-center gap-2 flex-wrap min-w-0">
+                        <span className="font-mono text-[10px] text-[#00D492] font-semibold bg-[#26A17B]/10 px-1.5 py-0.5 rounded border border-[#26A17B]/20 shrink-0">
+                          {tx.pair || "BNB/USDT"}
+                        </span>
+                        <span
+                          className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-mono border shrink-0 ${
+                            isGain
+                              ? "bg-[#00D492]/10 text-[#00D492] border-[#00D492]/30"
+                              : isLoss
+                                ? "bg-rose-500/10 text-rose-400 border-rose-500/30"
+                                : isDep
+                                  ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
+                                  : "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                          }`}
                         >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                          {categoryDisplay}
+                        </span>
+                        {hasValidTxHash && (
+                          <a
+                            href={`${explorerBase}/tx/${tx.hash}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 font-mono text-[10px] text-gray-500 hover:text-[#00D492] transition-colors"
+                          >
+                            {`${tx.hash.slice(0, 6)}...${tx.hash.slice(-4)}`}
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleDelete(tx.id)}
+                        className="p-1.5 rounded-lg text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 transition-all shrink-0"
+                        title={t("delete")}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop Table Layout */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-white/5 text-[11px] font-mono uppercase text-gray-500 tracking-wider">
+                    <th className="pb-3 pl-2 w-[30%]">{t("colStrategyNote")}</th>
+                    <th className="pb-3 w-[10%]">{t("pairLabel")}</th>
+                    <th className="pb-3 w-[12%]">{t("categoryLabel")}</th>
+                    <th className="pb-3 w-[20%]">{t("colProofHash")}</th>
+                    <th className="pb-3 text-right w-[18%]">{t("colAmount")}</th>
+                    <th className="pb-3 text-right pr-2 w-[10%]">
+                      {t("colActions")}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.03]">
+                  {filteredTransactions.map((tx) => {
+                    const isGain =
+                      tx.category === "Trade Profit" ||
+                      tx.category === "Staking Yield";
+                    const isLoss = tx.category === "Trade Loss";
+                    const isDep = tx.category === "Deposit";
+                    const isWd = tx.category === "Withdrawal";
+                    const isLiveTrade = tx.category === "Live Trade";
+
+                    const categoryDisplay =
+                      tx.category === "Trade Profit"
+                        ? t("tradeProfitCategory")
+                        : tx.category === "Trade Loss"
+                          ? t("tradeLossCategory")
+                          : tx.category === "Deposit"
+                            ? t("depositCategory")
+                            : tx.category === "Withdrawal"
+                              ? t("withdrawalCategory")
+                              : tx.category === "Trading Fee"
+                                ? t("tradingFeeCategory")
+                                : tx.category === "Staking Yield"
+                                  ? t("stakingYieldCategory")
+                                  : tx.category;
+
+                    const cleanNote = String(tx.note || "")
+                      .replace(/^\[PancakeSwap On-Chain\]\s*/, "")
+                      .replace(/\s*[—-]\s*Ditukar\s*/, " · ")
+                      .replace(/\s*\.\s*Reasoning:[\s\S]*$/, "")
+                      .replace(/\s+menjadi\s+/, " → ")
+                      .replace(/\bBNBUSDT\b/g, "BNB/USDT");
+                    const hasValidTxHash = /^0x[a-fA-F0-9]{64}$/.test(tx.hash);
+                    const explorerBase = String(tx.pair || "").startsWith("t")
+                      ? "https://testnet.bscscan.com"
+                      : "https://bscscan.com";
+
+                    return (
+                      <tr
+                        key={tx.id}
+                        className="hover:bg-white/[0.02] transition-colors group"
+                      >
+                        {/* Type & Note */}
+                        <td className="py-4 pl-2">
+                          <div className="flex items-center gap-3">
+                            <div
+                              className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
+                                isGain
+                                  ? "bg-[#00D492]/10 border-[#00D492]/30 text-[#00D492]"
+                                  : isLoss
+                                    ? "bg-rose-500/10 border-rose-500/30 text-rose-400"
+                                    : isDep
+                                      ? "bg-blue-500/10 border-blue-500/30 text-blue-400"
+                                      : "bg-amber-500/10 border-amber-500/30 text-amber-400"
+                              }`}
+                            >
+                              {isGain && (
+                                <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
+                              )}
+                              {isLoss && (
+                                <ArrowDownRight className="w-4 h-4 stroke-[2.5]" />
+                              )}
+                              {isDep && (
+                                <ArrowDownLeft className="w-4 h-4 stroke-[2.5]" />
+                              )}
+                              {isWd && (
+                                <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
+                              )}
+                              {!isGain && !isLoss && !isDep && !isWd && (
+                                <Coins className="w-4 h-4" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-semibold text-sm text-white truncate">
+                                {cleanNote}
+                              </div>
+                              <div className="text-[11px] font-mono text-gray-500 flex items-center gap-1.5 mt-0.5">
+                                <Clock className="w-3 h-3 shrink-0" />
+                                {new Date(tx.created_at).toLocaleDateString(
+                                  language === "id" ? "id-ID" : "en-US",
+                                  {
+                                    day: "numeric",
+                                    month: "short",
+                                    year: "numeric",
+                                  },
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Pair */}
+                        <td className="py-4">
+                          <span className="font-mono text-xs text-[#00D492] font-semibold bg-[#26A17B]/10 px-2 py-0.5 rounded border border-[#26A17B]/20">
+                            {tx.pair || "BNB/USDT"}
+                          </span>
+                        </td>
+
+                        {/* Category Badge */}
+                        <td className="py-4">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono border whitespace-nowrap ${
+                              isGain
+                                ? "bg-[#00D492]/10 text-[#00D492] border-[#00D492]/30"
+                                : isLoss
+                                  ? "bg-rose-500/10 text-rose-400 border-rose-500/30"
+                                  : isDep
+                                    ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
+                                    : "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                            }`}
+                          >
+                            {categoryDisplay}
+                          </span>
+                        </td>
+
+                        {/* BSC On-Chain Proof */}
+                        <td className="py-4">
+                          {hasValidTxHash ? (
+                            <a
+                              href={`${explorerBase}/tx/${tx.hash}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={tx.hash}
+                              className="inline-flex items-center gap-1.5 font-mono text-xs text-gray-400 hover:text-[#00D492] transition-colors"
+                            >
+                              <span>{`${tx.hash.slice(0, 10)}...${tx.hash.slice(-8)}`}</span>
+                              <ExternalLink className="w-3 h-3 text-gray-500 group-hover:text-[#00D492]" />
+                            </a>
+                          ) : (
+                            <span className="font-mono text-xs text-gray-600">
+                              —
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Amount */}
+                        <td className="py-4 text-right">
+                          <div
+                            className={`font-mono font-bold text-base ${
+                              isGain || isDep
+                                ? "text-[#00D492]"
+                                : isLiveTrade
+                                  ? "text-gray-300"
+                                  : "text-rose-400"
+                            }`}
+                          >
+                            {isLiveTrade ? "" : isGain || isDep ? "+" : "-"}$
+                            {tx.amount.toLocaleString("en-US", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </div>
+                          <div className="text-[10px] font-mono text-gray-500">
+                            {isLiveTrade
+                              ? language === "id"
+                                ? "Swap on-chain · bukan PnL"
+                                : "On-chain swap · not PnL"
+                              : tx.category === "Deposit"
+                                ? language === "id"
+                                  ? "Modal Masuk"
+                                  : "Capital In"
+                                : tx.category === "Withdrawal"
+                                  ? language === "id"
+                                    ? "Modal Keluar"
+                                    : "Capital Out"
+                                  : categoryDisplay}
+                          </div>
+                        </td>
+
+                        {/* Delete Action */}
+                        <td className="py-4 text-right pr-2">
+                          <button
+                            onClick={() => handleDelete(tx.id)}
+                            className="p-1.5 rounded-lg text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 opacity-40 group-hover:opacity-100 transition-all"
+                            title={t("delete")}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
       <section className="glass-card p-4 sm:p-6 border border-[#1E2738]">

@@ -28,7 +28,7 @@ export default function LiveAgentPage() {
             </span>
           </div>
 
-          <h1 className="text-3xl font-extrabold tracking-tight text-white flex items-center gap-3">
+          <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight text-white flex items-center gap-2 sm:gap-3">
             {language === "id" ? "AI Agent Live DEX" : "Live Agent DEX Trading"}
             <span className="text-xs px-2.5 py-1 rounded-full font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
               Autonomous Bot

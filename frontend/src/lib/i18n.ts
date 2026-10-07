@@ -43,7 +43,7 @@ export const translations = {
     quantProjection: "Quant Projection",
     bullish: "Bullish",
     bearish: "Bearish",
-    outlook: "30-Day Outlook",
+    outlook: "24-Hour Outlook",
     latestTrade: "Latest Trade",
     tradeProfit: "Trade Profit",
     tradeLoss: "Trade Loss",
@@ -209,7 +209,7 @@ export const translations = {
     quantProjection: "Proyeksi Kuant",
     bullish: "Bullish",
     bearish: "Bearish",
-    outlook: "Prospek 30 Hari",
+    outlook: "Prospek 24 Jam",
     latestTrade: "Trade Terakhir",
     tradeProfit: "Profit Trade",
     tradeLoss: "Rugi Trade",
@@ -348,9 +348,9 @@ export const uiCopy = {
     noTransactions: "No Supabase transactions found for this wallet",
     recordTransaction: "Use the Record Trade / Capital button above to add a new transaction.",
     suggestions: [
-      "📊 Analyze BNB price outlook for the next 30 days",
+      "📊 Analyze BNB price outlook for the next 24 hours",
       "🔍 Find my recent trading profit & loss records",
-      "📈 What is BTC price and market sentiment today?",
+      "📈 What is BNB price and market sentiment today?",
     ],
   },
   id: {
@@ -364,9 +364,9 @@ export const uiCopy = {
     noTransactions: "Belum ada transaksi Supabase untuk wallet ini",
     recordTransaction: "Gunakan tombol Catat Transaksi / Modal di atas untuk mencatat transaksi baru.",
     suggestions: [
-      "📊 Analisis harga BNB 30 hari ke depan",
+      "📊 Analisis harga BNB 24 jam ke depan",
       "🔍 Cari catatan profit dan rugi trading terbaru saya",
-      "📈 Berapa harga BTC dan sentimen pasar hari ini?",
+      "📈 Berapa harga BNB dan sentimen pasar hari ini?",
     ],
   },
 } as const;

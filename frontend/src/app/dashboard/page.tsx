@@ -63,8 +63,8 @@ export default function DashboardPage() {
     <div className="space-y-8 animate-fade-in">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold mb-1">{t("dashboard")}</h1>
-          <p className="text-gray-400">
+          <h1 className="text-2xl sm:text-3xl font-bold mb-1">{t("dashboard")}</h1>
+          <p className="text-sm sm:text-base text-gray-400">
             {isConnected
               ? t("welcomeBack", {
                   address: `${address?.slice(0, 6)}...${address?.slice(-4)}`,

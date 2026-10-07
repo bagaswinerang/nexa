@@ -57,7 +57,7 @@ export default function BalanceCards({
             </div>
           </div>
 
-          <div className="text-3xl md:text-4xl font-extrabold font-mono tracking-tight text-white mb-3">
+          <div className="text-2xl sm:text-3xl md:text-4xl font-extrabold font-mono tracking-tight text-white mb-3">
             ${totalEquity.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-sm font-sans font-medium text-gray-400">USDT</span>
           </div>
 
@@ -85,7 +85,7 @@ export default function BalanceCards({
           {t("netRealizedPnL")}
         </div>
         <div
-          className={`text-xl md:text-2xl font-bold font-mono ${
+          className={`text-lg sm:text-xl md:text-2xl font-bold font-mono ${
             netPnL >= 0 ? "text-[#00D492]" : "text-rose-400"
           }`}
         >
@@ -109,7 +109,7 @@ export default function BalanceCards({
         <div className="text-xs uppercase font-mono text-gray-400 mb-1">
           {t("depositsWithdrawals")}
         </div>
-        <div className="text-xl md:text-2xl font-bold font-mono text-white">
+        <div className="text-lg sm:text-xl md:text-2xl font-bold font-mono text-white">
           ${totalDeposit.toLocaleString("en-US", { minimumFractionDigits: 0 })} <span className="text-xs text-gray-400 font-sans font-normal">{t("in")}</span> / ${totalWithdrawal.toLocaleString("en-US", { minimumFractionDigits: 0 })} <span className="text-xs text-gray-400 font-sans font-normal">{t("out")}</span>
         </div>
         <div className="text-[11px] text-gray-500 font-mono mt-2">

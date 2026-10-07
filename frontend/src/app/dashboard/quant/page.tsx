@@ -71,7 +71,7 @@ export default function QuantPage() {
               {t("gbmFormula")}
             </span>
           </div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-white">
+          <h1 className="text-xl sm:text-3xl font-extrabold tracking-tight text-white">
             {t("quantLabTitle")}
           </h1>
           <p className="text-sm text-gray-400">{t("quantLabSubtitle")}</p>
@@ -397,7 +397,7 @@ export default function QuantPage() {
           <div className="w-14 h-14 rounded-2xl bg-[#26A17B]/10 border border-[#26A17B]/20 flex items-center justify-center mx-auto mb-4 text-[#00D492]">
             <Cpu className="w-7 h-7" />
           </div>
-          <h3 className="text-xl font-bold text-white mb-2">
+          <h3 className="text-lg sm:text-xl font-bold text-white mb-2">
             {language === "id"
               ? "Belum Ada Simulasi Dijalankan"
               : "No Simulation Run Yet"}
@@ -413,8 +413,8 @@ export default function QuantPage() {
           >
             <Play className="w-4 h-4 fill-black stroke-none" />
             {language === "id"
-              ? "Jalankan Cepat BNB 30 Hari"
-              : "Quick Run BNB 30 Days"}
+              ? `Jalankan Cepat BNB ${horizon}`
+              : `Quick Run BNB ${horizon}`}
           </button>
         </div>
       )}

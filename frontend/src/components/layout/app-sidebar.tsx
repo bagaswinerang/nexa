@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -13,8 +15,14 @@ import { cn } from "@/lib/utils";
 import { useLanguage } from "@/components/layout/language-provider";
 
 import NexaLettermark from "@/components/brand/logo";
+import { X } from "lucide-react";
 
-export default function AppSidebar() {
+interface AppSidebarProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
+export default function AppSidebar({ isOpen = false, onClose }: AppSidebarProps) {
   const pathname = usePathname();
   const { t } = useLanguage();
   const navItems = [
@@ -30,14 +38,43 @@ export default function AppSidebar() {
     { href: "/dashboard/quant", label: "Quant Lab", icon: BarChart3 },
   ];
 
+  // Close on route change on mobile
+  useEffect(() => {
+    if (isOpen && onClose) {
+      onClose();
+    }
+  }, [pathname]);
+
   return (
-    <aside className="hidden md:flex flex-col w-64 border-r border-white/5 bg-surface/50 backdrop-blur-xl">
-      {/* Logo */}
-      <div className="flex items-center gap-3 px-6 py-6 border-b border-white/5">
-        <Link href="/dashboard" className="flex items-center">
-          <NexaLettermark variant="hex-slash" size={34} showWordmark={true} />
-        </Link>
-      </div>
+    <>
+      {/* Mobile Backdrop */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden"
+          onClick={onClose}
+        />
+      )}
+      
+      <aside 
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 flex flex-col w-64 border-r border-white/5 bg-[#080b11] backdrop-blur-xl transition-transform duration-300 md:relative md:translate-x-0 md:bg-surface/50",
+          isOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
+        {/* Logo */}
+        <div className="flex items-center justify-between px-6 py-6 border-b border-white/5">
+          <Link href="/dashboard" className="flex items-center">
+            <NexaLettermark variant="hex-slash" size={34} showWordmark={true} />
+          </Link>
+          {onClose && (
+            <button 
+              onClick={onClose}
+              className="md:hidden p-2 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
+        </div>
 
       {/* Navigation */}
       <nav className="flex-1 px-4 py-6 space-y-1">
@@ -81,5 +118,6 @@ export default function AppSidebar() {
         </Link>
       </div>
     </aside>
+    </>
   );
 }

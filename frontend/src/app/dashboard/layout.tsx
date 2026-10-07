@@ -3,12 +3,10 @@
 import { useState } from "react";
 import AppSidebar from "@/components/layout/app-sidebar";
 import ChatDrawer from "@/components/chat/chat-drawer";
-import { Bot } from "lucide-react";
+import { Bot, Menu } from "lucide-react";
 
 import Link from "next/link";
 import NexaLettermark from "@/components/brand/logo";
-import LanguageSelector from "@/components/layout/language-selector";
-import ConnectWallet from "@/components/layout/connect-wallet";
 
 export default function DashboardLayout({
   children,
@@ -16,22 +14,30 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
     <div className="flex h-screen bg-background overflow-hidden flex-col md:flex-row">
       {/* Mobile Top Navbar (visible on < md screens) */}
       <header className="flex md:hidden items-center justify-between px-4 py-3 border-b border-white/5 bg-[#080B11]/90 backdrop-blur-md z-30 shrink-0">
-        <Link href="/" className="flex items-center gap-2">
-          <NexaLettermark size={26} showWordmark={true} />
-        </Link>
-        <div className="flex items-center gap-2">
-          <LanguageSelector />
-          <ConnectWallet />
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="p-2 -ml-2 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-all"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <Link href="/" className="flex items-center gap-2">
+            <NexaLettermark size={26} showWordmark={true} />
+          </Link>
         </div>
       </header>
 
-      {/* Desktop Sidebar */}
-      <AppSidebar />
+      {/* Sidebar */}
+      <AppSidebar 
+        isOpen={isSidebarOpen} 
+        onClose={() => setIsSidebarOpen(false)} 
+      />
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">

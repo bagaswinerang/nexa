@@ -41,7 +41,7 @@ export function QuantStat({
       </div>
 
       <div className="my-1">
-        <div className="text-xl sm:text-2xl font-bold font-mono tracking-tight text-white group-hover:text-[#00D492] transition-colors">
+        <div className="text-lg sm:text-2xl font-bold font-mono tracking-tight text-white group-hover:text-[#00D492] transition-colors">
           {value}
         </div>
       </div>
