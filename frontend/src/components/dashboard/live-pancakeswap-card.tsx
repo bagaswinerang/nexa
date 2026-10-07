@@ -707,7 +707,7 @@ export default function LivePancakeSwapCard({
             </div>
             <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6 mt-1">
               <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-extrabold text-amber-400">
+                <span className="text-xl sm:text-2xl font-extrabold text-amber-400">
                   {balances?.bnb_balance.toFixed(4) ?? "0.0000"}{" "}
                   <span className="text-xs text-slate-400 font-normal">
                     tBNB
@@ -716,7 +716,7 @@ export default function LivePancakeSwapCard({
               </div>
               <div className="hidden sm:block w-px h-8 bg-white/10"></div>
               <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-extrabold text-emerald-400">
+                <span className="text-xl sm:text-2xl font-extrabold text-emerald-400">
                   ${balances?.usdt_balance.toFixed(4) ?? "0.0000"}{" "}
                   <span className="text-xs text-slate-400 font-normal">
                     tUSDT
@@ -830,14 +830,14 @@ export default function LivePancakeSwapCard({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0 flex-1">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0 flex-1">
           <button
             onClick={() => handleManualSwap("BUY")}
             disabled={isSwapping || !balances?.configured}
             className="flex-1 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
           >
             <Coins className="w-3.5 h-3.5" />
-            {isSwapping ? "Swapping..." : "BUY tUSDT dari tBNB"}
+            {isSwapping ? "Swapping..." : "BUY tUSDT"}
           </button>
 
           <button
@@ -846,7 +846,7 @@ export default function LivePancakeSwapCard({
             className="flex-1 px-4 py-2.5 bg-rose-500 hover:bg-rose-600 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
           >
             <Coins className="w-3.5 h-3.5" />
-            {isSwapping ? "Swapping..." : "SELL tUSDT ke tBNB"}
+            {isSwapping ? "Swapping..." : "SELL tUSDT"}
           </button>
 
           <button
@@ -854,14 +854,14 @@ export default function LivePancakeSwapCard({
             disabled={isAutoExecuting || !balances?.configured}
             className="flex-1 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-all shadow-lg shadow-amber-500/20 flex items-center justify-center gap-1.5"
           >
-            <Play className="w-3.5 h-3.5 fill-current" />
+            <Play className="w-3.5 h-3.5 fill-current shrink-0" />
             {isAutoExecuting
               ? "Menyiapkan AI..."
               : isAutoRunning
                 ? "Stop AI Agent"
                 : isAutoPaused
                   ? "Coba Lagi"
-                  : "Mulai Analisis AI"}
+                  : "Mulai AI"}
           </button>
         </div>
       </div>
@@ -902,17 +902,19 @@ export default function LivePancakeSwapCard({
       <div
         className={`mb-5 p-5 rounded-2xl border ${analysisToDisplay?.executed === true ? "bg-emerald-500/10 border-emerald-500/30" : "bg-[#0b0e14] border-white/10"} relative overflow-hidden shadow-lg`}
       >
-        <div className="flex items-center gap-2 mb-4">
-          <Bot
-            className={`w-5 h-5 ${analysisToDisplay?.executed === true ? "text-emerald-400" : "text-amber-400"}`}
-          />
-          <h4
-            className={`text-sm font-bold ${analysisToDisplay?.executed === true ? "text-emerald-400" : "text-white"}`}
-          >
-            Laporan Analisis AI Agent
-          </h4>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-2 mb-4">
+          <div className="flex items-center gap-2">
+            <Bot
+              className={`w-5 h-5 shrink-0 ${analysisToDisplay?.executed === true ? "text-emerald-400" : "text-amber-400"}`}
+            />
+            <h4
+              className={`text-sm font-bold ${analysisToDisplay?.executed === true ? "text-emerald-400" : "text-white"}`}
+            >
+              Laporan Analisis AI Agent
+            </h4>
+          </div>
           <span
-            className={`ml-auto text-[10px] font-mono px-2.5 py-1 rounded-full border font-semibold ${analysisBadgeColor}`}
+            className={`sm:ml-auto w-fit text-[10px] font-mono px-2.5 py-1 rounded-full border font-semibold ${analysisBadgeColor}`}
           >
             {isAutoPaused
               ? "AI AGENT DIJEDA"
@@ -1031,21 +1033,31 @@ export default function LivePancakeSwapCard({
                     {decision.summary}
                   </p>
                 </div>
-                <span className="text-slate-500 whitespace-nowrap">
-                  {new Date(decision.timestamp).toLocaleString()}
-                </span>
-                {decision.explorerUrl && (
-                  <a
-                    href={decision.explorerUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    title={decision.txHash}
-                    className="font-mono text-amber-400 hover:text-amber-300 shrink-0"
-                  >
-                    {`${decision.txHash?.slice(0, 8)}...${decision.txHash?.slice(-6)}`}
-                    <ExternalLink className="inline w-3 h-3 ml-1" />
-                  </a>
-                )}
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className="text-slate-500 whitespace-nowrap text-[10px] sm:text-xs">
+                    {new Date(decision.timestamp).toLocaleString(
+                      undefined,
+                      {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      }
+                    )}
+                  </span>
+                  {decision.explorerUrl && (
+                    <a
+                      href={decision.explorerUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={decision.txHash}
+                      className="font-mono text-[10px] sm:text-xs text-amber-400 hover:text-amber-300"
+                    >
+                      {`${decision.txHash?.slice(0, 6)}...${decision.txHash?.slice(-4)}`}
+                      <ExternalLink className="inline w-3 h-3 ml-1" />
+                    </a>
+                  )}
+                </div>
               </div>
             ))
           )}
