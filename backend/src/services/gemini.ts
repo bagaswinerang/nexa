@@ -206,13 +206,8 @@ async function attemptChatWithModel(
     ? `${SYSTEM_INSTRUCTION}\n<thinking_mode>Berikan ringkasan pertimbangan data di dalam <thought> sebelum jawaban akhir.</thinking_mode>`
     : SYSTEM_INSTRUCTION;
     
-  // Map fake gemini-3.x models to gemini-1.5-flash so the API doesn't crash with a 404.
-  const actualModelName = modelName.startsWith("gemini-3.") 
-    ? "gemini-1.5-flash" 
-    : modelName;
-
   const model = genAI.getGenerativeModel({
-    model: actualModelName,
+    model: modelName,
     systemInstruction: dynamicInstruction,
     tools: [{ functionDeclarations: tools }],
   });
@@ -311,9 +306,9 @@ export async function chat(
           setTimeout(
             () =>
               reject(
-                new Error(`Model ${modelName} request timed out after 10s`),
+                new Error(`Model ${modelName} request timed out after 60s`),
               ),
-            10_000,
+            60_000,
           ),
         ),
       ]);
