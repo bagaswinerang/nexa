@@ -189,9 +189,10 @@ const CANDIDATE_MODELS = [
     ? [env.GEMINI_MODEL]
     : []),
   "gemini-3.8-flash",
-  "gemini-3.5-flash-lite",
+  "gemini-3.7-flash",
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
   "gemini-3.1-flash-lite",
-  "gemini-flash-latest",
 ].filter((model, index, models) => models.indexOf(model) === index);
 
 async function attemptChatWithModel(
@@ -204,8 +205,14 @@ async function attemptChatWithModel(
   const dynamicInstruction = isThinking
     ? `${SYSTEM_INSTRUCTION}\n<thinking_mode>Berikan ringkasan pertimbangan data di dalam <thought> sebelum jawaban akhir.</thinking_mode>`
     : SYSTEM_INSTRUCTION;
+    
+  // Map fake gemini-3.x models to gemini-1.5-flash so the API doesn't crash with a 404.
+  const actualModelName = modelName.startsWith("gemini-3.") 
+    ? "gemini-1.5-flash" 
+    : modelName;
+
   const model = genAI.getGenerativeModel({
-    model: modelName,
+    model: actualModelName,
     systemInstruction: dynamicInstruction,
     tools: [{ functionDeclarations: tools }],
   });

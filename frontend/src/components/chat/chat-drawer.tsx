@@ -24,7 +24,7 @@ export default function ChatDrawer({ isOpen, onClose }: ChatDrawerProps) {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
-  const [selectedModel, setSelectedModel] = useState("gemini-3.5-flash-lite");
+  const [selectedModel, setSelectedModel] = useState("gemini-3.8-flash");
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -168,10 +168,11 @@ export default function ChatDrawer({ isOpen, onClose }: ChatDrawerProps) {
                   onChange={(e) => setSelectedModel(e.target.value)}
                   className="bg-white/[0.04] border border-white/10 text-gray-300 text-xs rounded-lg px-2 py-1 outline-none cursor-pointer hover:border-white/20 transition-all font-mono"
                 >
-                  <option value="gemini-3.5-flash-lite" className="bg-surface text-white">Gemini 3.5 Flash Lite (Fast)</option>
+                  <option value="gemini-3.8-flash" className="bg-surface text-white">Gemini 3.8 Flash</option>
+                  <option value="gemini-3.7-flash" className="bg-surface text-white">Gemini 3.7 Flash</option>
+                  <option value="gemini-3.6-flash" className="bg-surface text-white">Gemini 3.6 Flash</option>
+                  <option value="gemini-3.5-flash" className="bg-surface text-white">Gemini 3.5 Flash</option>
                   <option value="gemini-3.1-flash-lite" className="bg-surface text-white">Gemini 3.1 Flash Lite</option>
-                  <option value="gemini-3.8-flash" className="bg-surface text-white">Gemini 3.8 Flash (Thinking)</option>
-                  <option value="gemini-flash-latest" className="bg-surface text-white">Gemini Flash Latest</option>
                 </select>
               </div>
 
